@@ -1,73 +1,81 @@
 # AWS Reverse Tunnel
 
-Expose a home-network service at `<name>.<domain>` — no inbound ports opened at home.
+This tool makes a home-network service available at `<name>.<domain>`. It does not open an inbound port at home.
 
 ```
 Browser -> DNS (Cloudflare) -> EC2 (Caddy + frps) -> tunnel -> home PC (frpc) -> your app
 ```
 
-## Setup & Usage
+## Setup and Usage
 
 **1. Install the CLI:**
 
 ```sh
-# anywhere else — install frpc yourself first:
+# On a different machine, install frpc first:
 # https://github.com/fatedier/frp/releases
 uv tool install 'aws-reverse-tunnel[infra]'
 ```
 
-**2. Deploy the AWS side**
+**2. Deploy the AWS stack**
 
-AWS stack: EC2 + frps/Caddy, Elastic IP, IAM role
+The AWS stack contains an EC2 host, frps, Caddy, an Elastic IP, and an IAM role.
 
 ```sh
-aws-reverse-tunnel infra config --domain dasbd72.com   # region auto-detected
+aws-reverse-tunnel infra config --domain dasbd72.com   # The command finds the region.
 aws-reverse-tunnel infra deploy
 ```
 
 - `infra config`
-  - `--domain` is the base domain for your tunnel subdomains (e.g. `dasbd72.com`).
-  - `--region` is the AWS region to deploy the stack in (auto-detected from your AWS CLI config).
-  - `--extra-port-range START-END` opens that TCP+UDP port range on the EC2 host and in
-    frps — needed before `frpc add --proto tcp|udp --remote-port` can use a port in that
-    range. Not opened at all unless given. Requires `infra deploy` to apply.
-  - `--yes` skips confirmation prompts.
+  - `--domain` is the base domain for the tunnel subdomains, for example `dasbd72.com`.
+  - `--region` is the AWS region for the stack. The command reads the region from the
+    AWS CLI configuration if you do not give it.
+  - `--extra-port-range START-END` opens a TCP and UDP port range on the EC2 host and in
+    frps. Set this range before you use `frpc add --proto tcp --remote-port` or
+    `frpc add --proto udp --remote-port`. The command does not open the range if you do
+    not give this option. You must run `infra deploy` to apply the change.
+  - `--yes` skips the confirmation prompts.
 
-Note the `ElasticIp` output (or run `aws-reverse-tunnel infra status` anytime).
+Record the `ElasticIp` output. You can also run `aws-reverse-tunnel infra status` at any time.
 
-**2b. Point DNS at the Elastic IP.** DNS is managed outside this stack (e.g.
-Cloudflare). Create a wildcard record `*.dasbd72.com` (type `A`) pointing at the
-`ElasticIp` from the previous step. Keep it **DNS-only** (not proxied / "grey
-cloud" in Cloudflare) and make sure port 80 is reachable, so Caddy can obtain
-per-host TLS certs on demand via Let's Encrypt HTTP-01.
+**2b. Point the DNS at the Elastic IP.** An external provider controls the DNS,
+for example Cloudflare. Make a wildcard record `*.dasbd72.com` of type `A`.
+Point the record at the `ElasticIp` from the previous step. Keep the record
+DNS-only. Do not use the Cloudflare proxy (the grey cloud, not the orange
+cloud). Make sure that port 80 is open. Caddy then gets a TLS certificate for
+each host on demand with Let's Encrypt HTTP-01.
 
-**3.1. Configure the tunnel client, then expose a service:**
+**3.1. Configure the tunnel client and make a service available:**
 
 ```sh
-aws-reverse-tunnel frpc config   # server address + domain + region + token auto-detected from step 2
+aws-reverse-tunnel frpc config   # The command reads the server address, domain, region, and token from step 2.
 aws-reverse-tunnel frpc add openwebui 192.168.50.10:8080
 # -> https://openwebui.dasbd72.com
 ```
 
 - `frpc config`
-  - `--server-addr` is the public IP of the EC2 instance (auto-detected from step 2).
-  - `--base-domain` is the base domain for your tunnel subdomains (auto-detected from step 2).
-  - `--region` is the AWS region to deploy the stack in (auto-detected from your AWS CLI config).
-  - `--token` is the frp auth token (fetched from SSM if this is the same machine that ran step 2).
-- `frpc add <name> <local-ip>:<local-port>` adds a new tunnel for the given local service.
-  - By default this exposes an HTTP(S) service at `<name>.<base-domain>`.
-  - For a non-HTTP service (e.g. WireGuard), pass `--proto tcp|udp --remote-port <port>`
-    to bind an explicit port on the frps server instead, e.g.
-    `frpc add wireguard 127.0.0.1:51820 --proto udp --remote-port 51820`. The port must
-    fall within the range set by `infra config --extra-port-range`.
-- `frpc list` lists all configured tunnels.
+  - `--server-addr` is the public IP address of the EC2 host. The command reads it from
+    step 2 if you do not give it.
+  - `--base-domain` is the base domain for the tunnel subdomains. The command reads it
+    from step 2 if you do not give it.
+  - `--region` is the AWS region for the stack. The command reads the region from the
+    AWS CLI configuration if you do not give it.
+  - `--token` is the frp authentication token. The command reads it from SSM if you run
+    it on the same machine as step 2.
+- `frpc add <name> <local-ip>:<local-port>` adds a tunnel for a local service.
+  - By default, the command makes an HTTP or HTTPS service available at
+    `<name>.<base-domain>`.
+  - For a service that is not HTTP, for example WireGuard, give `--proto tcp` or
+    `--proto udp` with `--remote-port <port>`. This binds a specified port on the frps
+    server. For example: `frpc add wireguard 127.0.0.1:51820 --proto udp --remote-port 51820`.
+    The port must be in the range that you set with `infra config --extra-port-range`.
+- `frpc list` shows all the configured tunnels.
 - `frpc del <name>` removes a configured tunnel.
 
 
-**3.2. Run frpc client in other machines:**
+**3.2. Run the frpc client on a different machine:**
 
 ```sh
-# Get the frpc config
+# Get the frpc configuration.
 aws-reverse-tunnel frpc render
 ```
 
@@ -81,12 +89,14 @@ uv run pre-commit run --all-files
 ```
 
 **Layout:**
-- `src/aws_reverse_tunnel/` — the CLI, including `infra/` (the CDK stack,
-  bundled into the package so `infra deploy` works without cloning this repo)
+- `src/aws_reverse_tunnel/` is the CLI. It includes `infra/`, which is the CDK
+  stack. The package contains the stack. Thus `infra deploy` operates without a
+  clone of this repository.
 
-**Known limitation:** the frp auth token is generated in CDK app code, so its
-plaintext ends up in the synthesized CloudFormation template (stored as a
-real SecureString at rest, but visible to anyone who can read the stack).
-Fine for this personal, single-account setup.
+**Known limitation:** The CDK application code makes the frp authentication
+token. Thus the plaintext token goes into the synthesized CloudFormation
+template. AWS keeps the token as a SecureString when stored. But a person who
+can read the stack can see the token. This is acceptable for this personal,
+single-account setup.
 
-**License:** MIT — see [LICENSE](LICENSE).
+**License:** MIT. Refer to [LICENSE](LICENSE).
