@@ -13,14 +13,18 @@ STACK_NAME = "AwsReverseTunnelStack"
 @dataclasses.dataclass
 class InfraConfig:
     domain: str
-    hosted_zone_id: str
     region: str
     extra_port_range_start: int | None = None
     extra_port_range_end: int | None = None
 
     @classmethod
     def load(cls, path: Path) -> InfraConfig:
-        return cls(**json.loads(path.read_text()))
+        data = json.loads(path.read_text())
+        # Drop keys we no longer recognize (e.g. hosted_zone_id from configs
+        # written before DNS moved to an external provider) so an older file
+        # still loads instead of raising on an unexpected kwarg.
+        known = {field.name for field in dataclasses.fields(cls)}
+        return cls(**{key: value for key, value in data.items() if key in known})
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

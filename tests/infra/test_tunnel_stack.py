@@ -2,7 +2,6 @@ from typing import Any
 
 from aws_cdk import App, Stack
 from aws_cdk import aws_ec2 as ec2
-from aws_cdk import aws_route53 as route53
 from aws_cdk.assertions import Match, Template
 
 from aws_reverse_tunnel.infra.tunnel_stack import TunnelStack
@@ -18,19 +17,11 @@ def _build_template(**kwargs: Any) -> Template:
         availability_zones=["ap-northeast-1a"],
         public_subnet_ids=["subnet-12345"],
     )
-    hosted_zone = route53.HostedZone.from_hosted_zone_attributes(
-        fixtures,
-        "Zone",
-        hosted_zone_id="Z0FAKEZONE",
-        zone_name="dasbd72.com",
-    )
 
     stack = TunnelStack(
         app,
         "TunnelStack",
         vpc=vpc,
-        hosted_zone=hosted_zone,
-        hosted_zone_id="Z0FAKEZONE",
         domain_name="dasbd72.com",
         frp_token="test-token",
         **kwargs,
@@ -74,36 +65,11 @@ def test_instance_role_grants_ssm_managed_instance_core() -> None:
     assert any("AmazonSSMManagedInstanceCore" in str(role) for role in role_resources)
 
 
-def test_instance_role_can_change_only_its_own_hosted_zone_records() -> None:
+def test_instance_role_has_no_route53_permissions() -> None:
+    # DNS is managed externally now; the host never touches Route53.
     template = _build_template()
 
-    template.has_resource_properties(
-        "AWS::IAM::Policy",
-        {
-            "PolicyDocument": {
-                "Statement": Match.array_with(
-                    [
-                        Match.object_like(
-                            {
-                                "Action": "route53:ChangeResourceRecordSets",
-                                "Effect": "Allow",
-                                "Resource": Match.not_("*"),
-                            }
-                        )
-                    ]
-                )
-            }
-        },
-    )
-    # The resource is an Fn::Join'd ARN; confirm it's actually scoped to our
-    # zone. Search all IAM::Policy resources — the custom resource behind
-    # the frp token parameter has one of its own too.
-    policies = [
-        resource
-        for resource in template.to_json()["Resources"].values()
-        if resource["Type"] == "AWS::IAM::Policy"
-    ]
-    assert any("Z0FAKEZONE" in str(policy) for policy in policies)
+    assert "route53" not in str(template.to_json()).lower()
 
 
 def test_instance_role_can_read_frp_token_parameter() -> None:
@@ -165,17 +131,12 @@ def test_elastic_ip_is_allocated_and_associated_to_instance() -> None:
     )
 
 
-def test_wildcard_dns_record_points_at_elastic_ip() -> None:
+def test_no_dns_record_is_managed() -> None:
+    # DNS lives on an external provider (e.g. Cloudflare); the stack must not
+    # create any Route53 records of its own.
     template = _build_template()
 
-    template.has_resource_properties(
-        "AWS::Route53::RecordSet",
-        {
-            "Name": "*.dasbd72.com.",
-            "Type": "A",
-            "HostedZoneId": "Z0FAKEZONE",
-        },
-    )
+    assert template.find_resources("AWS::Route53::RecordSet") == {}
 
 
 def test_no_extra_port_range_opened_by_default() -> None:

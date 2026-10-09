@@ -66,10 +66,9 @@ _FEATURE_FLAGS = {
 app = cdk.App(context=_FEATURE_FLAGS)
 
 domain_name = app.node.try_get_context("domain")
-hosted_zone_id = app.node.try_get_context("hostedZoneId")
 region = app.node.try_get_context("region")
-if not domain_name or not hosted_zone_id or not region:
-    raise SystemExit("missing required CDK context: domain, hostedZoneId, region")
+if not domain_name or not region:
+    raise SystemExit("missing required CDK context: domain, region")
 
 extra_port_range_start = app.node.try_get_context("extraPortRangeStart")
 extra_port_range_end = app.node.try_get_context("extraPortRangeEnd")
@@ -83,7 +82,6 @@ TunnelStack(
     app,
     STACK_NAME,
     env=cdk.Environment(account=os.environ["CDK_DEFAULT_ACCOUNT"], region=region),
-    hosted_zone_id=hosted_zone_id,
     domain_name=domain_name,
     frp_token=_get_or_create_frp_token(),
     extra_port_range=extra_port_range,

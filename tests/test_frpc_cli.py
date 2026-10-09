@@ -134,9 +134,9 @@ class TestConfigCommand:
     def test_auto_derives_base_domain_and_region_from_infra_config(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        InfraConfig(
-            domain="dasbd72.com", hosted_zone_id="Z123", region="ap-northeast-1"
-        ).save(frpc_cli.INFRA_CONFIG_FILE)
+        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
+            frpc_cli.INFRA_CONFIG_FILE
+        )
         runner = CliRunner()
 
         result = runner.invoke(cli.main, ["frpc", "config", "--server-addr", "1.2.3.4"])
@@ -149,9 +149,9 @@ class TestConfigCommand:
     def test_auto_derives_server_addr_via_live_lookup(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        InfraConfig(
-            domain="dasbd72.com", hosted_zone_id="Z123", region="ap-northeast-1"
-        ).save(frpc_cli.INFRA_CONFIG_FILE)
+        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
+            frpc_cli.INFRA_CONFIG_FILE
+        )
         runner = CliRunner()
 
         result = runner.invoke(cli.main, ["frpc", "config"])
@@ -174,9 +174,9 @@ class TestConfigCommand:
     def test_explicit_flags_override_infra_config(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        InfraConfig(
-            domain="dasbd72.com", hosted_zone_id="Z123", region="ap-northeast-1"
-        ).save(frpc_cli.INFRA_CONFIG_FILE)
+        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
+            frpc_cli.INFRA_CONFIG_FILE
+        )
         runner = CliRunner()
 
         result = runner.invoke(
@@ -507,9 +507,9 @@ class TestRenderCommand:
     def test_auto_derives_from_infra_config_and_live_lookups(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        InfraConfig(
-            domain="dasbd72.com", hosted_zone_id="Z123", region="ap-northeast-1"
-        ).save(frpc_cli.INFRA_CONFIG_FILE)
+        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
+            frpc_cli.INFRA_CONFIG_FILE
+        )
         runner = CliRunner()
 
         result = runner.invoke(cli.main, ["frpc", "render"])

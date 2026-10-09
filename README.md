@@ -3,7 +3,7 @@
 Expose a home-network service at `<name>.<domain>` — no inbound ports opened at home.
 
 ```
-Browser -> Route53 -> EC2 (Caddy + frps) -> tunnel -> home PC (frpc) -> your app
+Browser -> DNS (Cloudflare) -> EC2 (Caddy + frps) -> tunnel -> home PC (frpc) -> your app
 ```
 
 ## Setup & Usage
@@ -18,16 +18,15 @@ uv tool install 'aws-reverse-tunnel[infra]'
 
 **2. Deploy the AWS side**
 
-AWS stack: EC2 + frps/Caddy, Elastic IP, wildcard DNS, IAM role
+AWS stack: EC2 + frps/Caddy, Elastic IP, IAM role
 
 ```sh
-aws-reverse-tunnel infra config --domain dasbd72.com   # zone ID + region auto-detected
+aws-reverse-tunnel infra config --domain dasbd72.com   # region auto-detected
 aws-reverse-tunnel infra deploy
 ```
 
 - `infra config`
   - `--domain` is the base domain for your tunnel subdomains (e.g. `dasbd72.com`).
-  - `--hosted-zone-id` is the Route53 hosted zone ID for that domain (auto-detected).
   - `--region` is the AWS region to deploy the stack in (auto-detected from your AWS CLI config).
   - `--extra-port-range START-END` opens that TCP+UDP port range on the EC2 host and in
     frps — needed before `frpc add --proto tcp|udp --remote-port` can use a port in that
@@ -35,6 +34,12 @@ aws-reverse-tunnel infra deploy
   - `--yes` skips confirmation prompts.
 
 Note the `ElasticIp` output (or run `aws-reverse-tunnel infra status` anytime).
+
+**2b. Point DNS at the Elastic IP.** DNS is managed outside this stack (e.g.
+Cloudflare). Create a wildcard record `*.dasbd72.com` (type `A`) pointing at the
+`ElasticIp` from the previous step. Keep it **DNS-only** (not proxied / "grey
+cloud" in Cloudflare) and make sure port 80 is reachable, so Caddy can obtain
+per-host TLS certs on demand via Let's Encrypt HTTP-01.
 
 **3.1. Configure the tunnel client, then expose a service:**
 

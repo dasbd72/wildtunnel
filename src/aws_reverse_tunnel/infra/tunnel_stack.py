@@ -6,7 +6,6 @@ from typing import Any
 from aws_cdk import CfnOutput, Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
-from aws_cdk import aws_route53 as route53
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 
@@ -14,18 +13,21 @@ _USER_DATA_TEMPLATE = Path(__file__).parent / "assets" / "user_data.sh"
 
 
 class TunnelStack(Stack):
-    """EC2 host running frps + Caddy, reachable at a wildcard subdomain of domain_name."""
+    """EC2 host running frps + Caddy, reachable at a wildcard subdomain of domain_name.
+
+    DNS is managed externally (e.g. Cloudflare): point a wildcard record
+    (``*.domain_name``) at the stack's Elastic IP. Caddy obtains TLS certs
+    on demand via Let's Encrypt HTTP-01, so no Route53 hosted zone is needed.
+    """
 
     def __init__(
         self,
         scope: Construct,
         construct_id: str,
         *,
-        hosted_zone_id: str,
         domain_name: str,
         frp_token: str,
         vpc: ec2.IVpc | None = None,
-        hosted_zone: route53.IHostedZone | None = None,
         frp_bind_port: int = 7000,
         frp_vhost_http_port: int = 7080,
         token_param_name: str = "/reverse-tunnel/frp-token",
@@ -36,13 +38,10 @@ class TunnelStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # `from_lookup`/`from_hosted_zone_attributes` both require a Stack
-        # scope, so they're resolved here (self) rather than in the caller.
-        # Tests inject fakes instead of exercising these live lookups.
+        # `from_lookup` requires a Stack scope, so it's resolved here (self)
+        # rather than in the caller. Tests inject a fake VPC instead of
+        # exercising this live lookup.
         vpc = vpc or ec2.Vpc.from_lookup(self, "DefaultVpc", is_default=True)
-        hosted_zone = hosted_zone or route53.HostedZone.from_hosted_zone_attributes(
-            self, "HostedZone", hosted_zone_id=hosted_zone_id, zone_name=domain_name
-        )
 
         token_param_arn = self.format_arn(
             service="ssm",
@@ -120,22 +119,6 @@ class TunnelStack(Stack):
                 actions=["ssm:GetParameter"], resources=[token_param_arn]
             )
         )
-        # Permissions required by certbot-dns-route53's DNS-01 challenge:
-        # ListHostedZones (to find the zone) and GetChange (to poll change
-        # status) can't be scoped to a resource; ChangeResourceRecordSets is
-        # scoped to this stack's zone only.
-        role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["route53:ChangeResourceRecordSets"],
-                resources=[hosted_zone.hosted_zone_arn],
-            )
-        )
-        role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["route53:ListHostedZones", "route53:GetChange"],
-                resources=["*"],
-            )
-        )
 
         allow_ports = (
             f"allowPorts = [{{ start = {extra_port_range[0]}, "
@@ -193,16 +176,6 @@ class TunnelStack(Stack):
 
         eip = ec2.CfnEIP(
             self, "TunnelEip", domain="vpc", instance_id=instance.instance_id
-        )
-
-        route53.CfnRecordSet(
-            self,
-            "WildcardRecord",
-            hosted_zone_id=hosted_zone.hosted_zone_id,
-            name=f"*.{domain_name}.",
-            type="A",
-            ttl="300",
-            resource_records=[eip.ref],
         )
 
         CfnOutput(self, "ElasticIp", value=eip.ref)

@@ -23,24 +23,9 @@ def fake_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(infra_cli.shutil, "which", lambda _name: "/usr/bin/cdk")
     monkeypatch.setattr(infra_cli.importlib, "import_module", lambda _name: object())
 
-    class FakeRoute53:
-        def list_hosted_zones_by_name(self, DNSName: str, MaxItems: str) -> dict:
-            return {
-                "HostedZones": [
-                    {
-                        "Id": "/hostedzone/Z123",
-                        "Name": f"{DNSName}.",
-                        "Config": {"PrivateZone": False},
-                    }
-                ]
-            }
-
     class FakeSession:
         region_name = "ap-northeast-1"
 
-    monkeypatch.setattr(
-        infra_cli.boto3, "client", lambda _service, region_name: FakeRoute53()
-    )
     monkeypatch.setattr(infra_cli.boto3, "Session", FakeSession)
 
     def fake_run(args, **kwargs):
@@ -65,34 +50,12 @@ class TestConfig:
 
         result = runner.invoke(
             infra_cli.infra,
-            [
-                "config",
-                "--domain",
-                "dasbd72.com",
-                "--region",
-                "us-east-1",
-                "--hosted-zone-id",
-                "ZEXPLICIT",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        config = _saved_config(infra_cli.INFRA_CONFIG_FILE)
-        assert config == InfraConfig(
-            domain="dasbd72.com", hosted_zone_id="ZEXPLICIT", region="us-east-1"
-        )
-
-    def test_auto_discovers_hosted_zone_id(self, isolated_paths: Path) -> None:
-        runner = CliRunner()
-
-        result = runner.invoke(
-            infra_cli.infra,
             ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
         config = _saved_config(infra_cli.INFRA_CONFIG_FILE)
-        assert config.hosted_zone_id == "Z123"
+        assert config == InfraConfig(domain="dasbd72.com", region="us-east-1")
 
     def test_defaults_region_from_boto3_session(self, isolated_paths: Path) -> None:
         runner = CliRunner()
@@ -118,55 +81,10 @@ class TestConfig:
         assert "--region" in result.output
         assert not infra_cli.INFRA_CONFIG_FILE.exists()
 
-    def test_errors_when_hosted_zone_not_found(
-        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        class EmptyRoute53:
-            def list_hosted_zones_by_name(self, DNSName: str, MaxItems: str) -> dict:
-                return {"HostedZones": []}
-
-        monkeypatch.setattr(
-            infra_cli.boto3, "client", lambda _service, region_name: EmptyRoute53()
-        )
-        runner = CliRunner()
-
-        result = runner.invoke(
-            infra_cli.infra,
-            ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
-        )
-
-        assert result.exit_code != 0
-        assert "--hosted-zone-id" in result.output
-
-    def test_errors_when_hosted_zone_ambiguous(
-        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        class AmbiguousRoute53:
-            def list_hosted_zones_by_name(self, DNSName: str, MaxItems: str) -> dict:
-                zone = {
-                    "Id": "/hostedzone/Z1",
-                    "Name": f"{DNSName}.",
-                    "Config": {"PrivateZone": False},
-                }
-                return {"HostedZones": [zone, {**zone, "Id": "/hostedzone/Z2"}]}
-
-        monkeypatch.setattr(
-            infra_cli.boto3, "client", lambda _service, region_name: AmbiguousRoute53()
-        )
-        runner = CliRunner()
-
-        result = runner.invoke(
-            infra_cli.infra,
-            ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
-        )
-
-        assert result.exit_code != 0
-        assert "--hosted-zone-id" in result.output
-
     def test_prompts_before_overwriting_changed_config(
         self, isolated_paths: Path
     ) -> None:
-        InfraConfig(domain="old.com", hosted_zone_id="ZOLD", region="us-east-1").save(
+        InfraConfig(domain="old.com", region="us-east-1").save(
             infra_cli.INFRA_CONFIG_FILE
         )
         runner = CliRunner()
@@ -181,7 +99,7 @@ class TestConfig:
         assert _saved_config(infra_cli.INFRA_CONFIG_FILE).domain == "old.com"
 
     def test_overwrites_when_confirmed(self, isolated_paths: Path) -> None:
-        InfraConfig(domain="old.com", hosted_zone_id="ZOLD", region="us-east-1").save(
+        InfraConfig(domain="old.com", region="us-east-1").save(
             infra_cli.INFRA_CONFIG_FILE
         )
         runner = CliRunner()
@@ -196,7 +114,7 @@ class TestConfig:
         assert _saved_config(infra_cli.INFRA_CONFIG_FILE).domain == "new.com"
 
     def test_yes_flag_skips_confirmation(self, isolated_paths: Path) -> None:
-        InfraConfig(domain="old.com", hosted_zone_id="ZOLD", region="us-east-1").save(
+        InfraConfig(domain="old.com", region="us-east-1").save(
             infra_cli.INFRA_CONFIG_FILE
         )
         runner = CliRunner()
@@ -268,9 +186,9 @@ class TestConfig:
         assert "--extra-port-range" in result.output
 
     def test_no_prompt_when_values_unchanged(self, isolated_paths: Path) -> None:
-        InfraConfig(
-            domain="dasbd72.com", hosted_zone_id="Z123", region="us-east-1"
-        ).save(infra_cli.INFRA_CONFIG_FILE)
+        InfraConfig(domain="dasbd72.com", region="us-east-1").save(
+            infra_cli.INFRA_CONFIG_FILE
+        )
         runner = CliRunner()
 
         result = runner.invoke(
@@ -282,9 +200,7 @@ class TestConfig:
 
 
 def _seed_config(path: Path) -> InfraConfig:
-    config = InfraConfig(
-        domain="dasbd72.com", hosted_zone_id="Z123", region="ap-northeast-1"
-    )
+    config = InfraConfig(domain="dasbd72.com", region="ap-northeast-1")
     config.save(path)
     return config
 
@@ -315,7 +231,6 @@ class TestDeployDestroyDiff:
         assert call["args"][0] == "/usr/bin/cdk"
         assert f"{sys.executable} -m aws_reverse_tunnel.infra.app" in call["args"]
         assert "domain=dasbd72.com" in call["args"]
-        assert "hostedZoneId=Z123" in call["args"]
         assert "region=ap-northeast-1" in call["args"]
         assert call["args"][-1] == "deploy"
 
@@ -324,7 +239,6 @@ class TestDeployDestroyDiff:
     ) -> None:
         InfraConfig(
             domain="dasbd72.com",
-            hosted_zone_id="Z123",
             region="ap-northeast-1",
             extra_port_range_start=20000,
             extra_port_range_end=20100,

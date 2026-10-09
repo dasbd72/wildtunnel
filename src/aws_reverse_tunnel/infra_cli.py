@@ -46,29 +46,6 @@ def _default_region() -> str | None:
     return boto3.Session().region_name
 
 
-def _discover_hosted_zone_id(domain: str, region: str) -> str:
-    client = boto3.client("route53", region_name=region)
-    response = client.list_hosted_zones_by_name(DNSName=domain, MaxItems="10")
-    normalized = domain.rstrip(".") + "."
-    matches = [
-        zone
-        for zone in response["HostedZones"]
-        if zone["Name"] == normalized and not zone["Config"]["PrivateZone"]
-    ]
-    if not matches:
-        raise click.ClickException(
-            f"no public Route53 hosted zone found for {domain!r}; pass --hosted-zone-id explicitly"
-        )
-    if len(matches) > 1:
-        ids = ", ".join(zone["Id"] for zone in matches)
-        raise click.ClickException(
-            f"multiple public hosted zones found for {domain!r} ({ids}); "
-            "pass --hosted-zone-id explicitly"
-        )
-    zone_id: str = matches[0]["Id"]
-    return zone_id.removeprefix("/hostedzone/")
-
-
 def _run_cdk(subcommand: str, infra_config: InfraConfig) -> None:
     cdk = _require_cdk()
     _require_aws_cdk_lib()
@@ -76,8 +53,6 @@ def _run_cdk(subcommand: str, infra_config: InfraConfig) -> None:
     context_args = [
         "-c",
         f"domain={infra_config.domain}",
-        "-c",
-        f"hostedZoneId={infra_config.hosted_zone_id}",
         "-c",
         f"region={infra_config.region}",
     ]
@@ -131,17 +106,13 @@ def infra() -> None:
 @click.option(
     "--domain",
     required=True,
-    help="Base domain for the wildcard DNS record, e.g. dasbd72.com.",
+    help="Base domain for the tunnel, e.g. dasbd72.com. Point a wildcard "
+    "record (*.DOMAIN) at the deployed Elastic IP in your DNS provider.",
 )
 @click.option(
     "--region",
     default=None,
     help="AWS region to deploy into. Defaults to your AWS CLI/config default region.",
-)
-@click.option(
-    "--hosted-zone-id",
-    default=None,
-    help="Route53 hosted zone ID for --domain. Auto-discovered from --domain if not given.",
 )
 @click.option(
     "--extra-port-range",
@@ -159,22 +130,19 @@ def infra() -> None:
 def config(
     domain: str,
     region: str | None,
-    hosted_zone_id: str | None,
     extra_port_range: str | None,
     yes: bool,
 ) -> None:
-    """Configure the domain/zone/region that deploy/destroy/diff/status target."""
+    """Configure the domain/region that deploy/destroy/diff/status target."""
     region = region or _default_region()
     if not region:
         raise click.ClickException(
             "no region given and none configured; pass --region or set a default "
             "with `aws configure set region <region>`"
         )
-    hosted_zone_id = hosted_zone_id or _discover_hosted_zone_id(domain, region)
     port_range = _parse_port_range(extra_port_range) if extra_port_range else None
     new_config = InfraConfig(
         domain=domain,
-        hosted_zone_id=hosted_zone_id,
         region=region,
         extra_port_range_start=port_range[0] if port_range else None,
         extra_port_range_end=port_range[1] if port_range else None,
@@ -184,9 +152,7 @@ def config(
         confirm_overwrite(InfraConfig.load(INFRA_CONFIG_FILE), new_config, yes=yes)
 
     new_config.save(INFRA_CONFIG_FILE)
-    click.echo(
-        f"Configured: domain={domain} hosted-zone-id={hosted_zone_id} region={region}"
-    )
+    click.echo(f"Configured: domain={domain} region={region}")
 
 
 @infra.command()

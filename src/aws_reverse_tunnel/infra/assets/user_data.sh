@@ -18,8 +18,7 @@ mkswap /swapfile
 swapon /swapfile
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
 
-dnf install -y python3-pip tar gzip
-pip3 install --no-cache-dir certbot certbot-dns-route53
+dnf install -y tar gzip
 
 # --- frps ---
 curl -fsSL -o /tmp/frp.tar.gz \
@@ -65,14 +64,17 @@ tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy
 chmod +x /usr/local/bin/caddy
 rm -f /tmp/caddy.tar.gz
 
-# --- wildcard TLS cert via Let's Encrypt DNS-01 (Route53) ---
-certbot certonly --non-interactive --agree-tos --register-unsafely-without-email \
-  --dns-route53 -d "${DOMAIN}" -d "*.${DOMAIN}"
-
+# --- TLS: Caddy auto-issues a per-host cert via Let's Encrypt HTTP-01 on
+# first request (on-demand). DNS lives on Cloudflare now, so there's no
+# DNS-01 challenge and no wildcard cert; each subdomain just needs to
+# resolve to this host's EIP (DNS-only, not Cloudflare-proxied) with port
+# 80 reachable. Caddy also handles renewal itself, so no certbot timer.
 mkdir -p /etc/caddy
 cat > /etc/caddy/Caddyfile <<EOF
 *.${DOMAIN} {
-    tls /etc/letsencrypt/live/${DOMAIN}/fullchain.pem /etc/letsencrypt/live/${DOMAIN}/privkey.pem
+    tls {
+        on_demand
+    }
     reverse_proxy 127.0.0.1:${VHOST_HTTP_PORT}
 }
 
@@ -98,28 +100,3 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now caddy
-
-# --- certbot renewal, twice daily, reloads caddy on success ---
-cat > /etc/systemd/system/certbot-renew.service <<'UNIT'
-[Unit]
-Description=certbot renew
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/certbot renew --quiet --deploy-hook "systemctl reload caddy"
-UNIT
-
-cat > /etc/systemd/system/certbot-renew.timer <<'UNIT'
-[Unit]
-Description=Twice daily certbot renewal check
-
-[Timer]
-OnCalendar=*-*-* 00,12:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-systemctl daemon-reload
-systemctl enable --now certbot-renew.timer
