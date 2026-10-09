@@ -4,12 +4,15 @@ import importlib
 import shutil
 import subprocess
 import sys
+from typing import Any
 
 import boto3
 import click
 from botocore.exceptions import ClientError
 
-from .infra_config import STACK_NAME, InfraConfig, describe_stack
+from . import token as token_module
+from .frpc_config import DEFAULT_SERVER_PORT
+from .infra_config import FRP_TOKEN_PARAM, STACK_NAME, InfraConfig, describe_stack
 from .paths import INFRA_CACHE_DIR, INFRA_CONFIG_FILE
 from .prompts import confirm_overwrite
 
@@ -173,12 +176,9 @@ def diff() -> None:
     _run_cdk("diff", _load_config())
 
 
-@infra.command()
-def status() -> None:
-    """Show the deployed stack's status and outputs."""
-    infra_config = _load_config()
+def _describe_deployed_stack(region: str) -> dict[str, Any]:
     try:
-        stack = describe_stack(infra_config.region)
+        return describe_stack(region)
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ValidationError":
             raise click.ClickException(
@@ -187,6 +187,59 @@ def status() -> None:
         raise click.ClickException(
             f"could not look up the deployed stack: {exc}"
         ) from exc
+
+
+def _stack_output(stack: dict[str, Any], key: str) -> str | None:
+    for output in stack.get("Outputs", []):
+        if output["OutputKey"] == key:
+            value: str = output["OutputValue"]
+            return value
+    return None
+
+
+@infra.command()
+def status() -> None:
+    """Show the deployed stack's status and outputs."""
+    infra_config = _load_config()
+    stack = _describe_deployed_stack(infra_config.region)
     click.echo(f"Status: {stack['StackStatus']}")
     for output in stack.get("Outputs", []):
         click.echo(f"{output['OutputKey']}: {output['OutputValue']}")
+
+
+@infra.command()
+def info() -> None:
+    """Show the values needed to configure an frpc client elsewhere.
+
+    frpc is decoupled from the infra side: it takes server-addr, base-domain
+    and token as explicit flags. This command reads those off the deployed
+    stack (Elastic IP + SSM token) so you can copy them to the frpc machine.
+    """
+    infra_config = _load_config()
+    stack = _describe_deployed_stack(infra_config.region)
+
+    server_addr = _stack_output(stack, "ElasticIp")
+    if server_addr is None:
+        raise click.ClickException(
+            f"stack {STACK_NAME!r} has no ElasticIp output; "
+            "re-run `aws-reverse-tunnel infra deploy`"
+        )
+    try:
+        token = token_module.fetch_token(FRP_TOKEN_PARAM, infra_config.region)
+    except ClientError as exc:
+        raise click.ClickException(
+            f"could not fetch the frp token from SSM parameter {FRP_TOKEN_PARAM!r}: {exc}"
+        ) from exc
+
+    click.echo(f"server-addr:  {server_addr}")
+    click.echo(f"base-domain:  {infra_config.domain}")
+    click.echo(f"server-port:  {DEFAULT_SERVER_PORT}")
+    click.echo(f"token:        {token}")
+    click.echo("")
+    click.echo("Run this on the frpc machine:")
+    click.echo(
+        f"  aws-reverse-tunnel frpc config \\\n"
+        f"    --server-addr {server_addr} \\\n"
+        f"    --base-domain {infra_config.domain} \\\n"
+        f"    --token {token}"
+    )

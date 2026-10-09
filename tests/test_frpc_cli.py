@@ -1,12 +1,10 @@
 from pathlib import Path
 
 import pytest
-from botocore.exceptions import ClientError
 from click.testing import CliRunner
 
 from aws_reverse_tunnel import cli, frpc_cli
 from aws_reverse_tunnel.frpc_config import FrpcConfig
-from aws_reverse_tunnel.infra_config import InfraConfig
 from aws_reverse_tunnel.services import Service, load_services
 
 
@@ -18,22 +16,7 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         frpc_cli, "SYSTEMD_UNIT_FILE", tmp_path / "systemd" / "frpc.service"
     )
-    monkeypatch.setattr(frpc_cli, "INFRA_CONFIG_FILE", tmp_path / "infra-config.json")
     return tmp_path
-
-
-def _stack_not_found(_region: str) -> dict:
-    raise ClientError(
-        {"Error": {"Code": "ValidationError", "Message": "does not exist"}},
-        "DescribeStacks",
-    )
-
-
-def _param_not_found(_param: str, _region: str) -> str:
-    raise ClientError(
-        {"Error": {"Code": "ParameterNotFound", "Message": "not found"}},
-        "GetParameter",
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -41,16 +24,6 @@ def fake_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict:
     recorded: dict = {"subprocess_calls": []}
 
     monkeypatch.setattr(frpc_cli.shutil, "which", lambda _name: "/usr/bin/frpc")
-    monkeypatch.setattr(
-        frpc_cli.token_module, "fetch_token", lambda _param, _region: "fake-token"
-    )
-    monkeypatch.setattr(
-        frpc_cli,
-        "describe_stack",
-        lambda _region: {
-            "Outputs": [{"OutputKey": "ElasticIp", "OutputValue": "1.2.3.4"}]
-        },
-    )
 
     def fake_run(args, **kwargs):
         recorded["subprocess_calls"].append(args)
@@ -72,8 +45,21 @@ def _config_args() -> list[str]:
         "1.2.3.4",
         "--base-domain",
         "dasbd72.com",
-        "--region",
-        "ap-northeast-1",
+        "--token",
+        "fake-token",
+    ]
+
+
+def _render_args() -> list[str]:
+    return [
+        "frpc",
+        "render",
+        "--server-addr",
+        "1.2.3.4",
+        "--base-domain",
+        "dasbd72.com",
+        "--token",
+        "fake-token",
     ]
 
 
@@ -131,158 +117,20 @@ class TestConfigCommand:
         assert "frpc not found on PATH" in result.output
         assert not frpc_cli.FRPC_CONFIG_FILE.exists()
 
-    def test_auto_derives_base_domain_and_region_from_infra_config(
-        self, isolated_paths: Path, fake_collaborators: dict
+    @pytest.mark.parametrize("missing", ["--server-addr", "--base-domain", "--token"])
+    def test_requires_server_addr_base_domain_and_token(
+        self, isolated_paths: Path, fake_collaborators: dict, missing: str
     ) -> None:
-        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
-            frpc_cli.INFRA_CONFIG_FILE
-        )
+        args = _config_args()
+        # Drop the flag and its value.
+        index = args.index(missing)
+        del args[index : index + 2]
         runner = CliRunner()
 
-        result = runner.invoke(cli.main, ["frpc", "config", "--server-addr", "1.2.3.4"])
-
-        assert result.exit_code == 0, result.output
-        config = FrpcConfig.load(frpc_cli.FRPC_CONFIG_FILE)
-        assert config.base_domain == "dasbd72.com"
-        assert config.region == "ap-northeast-1"
-
-    def test_auto_derives_server_addr_via_live_lookup(
-        self, isolated_paths: Path, fake_collaborators: dict
-    ) -> None:
-        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
-            frpc_cli.INFRA_CONFIG_FILE
-        )
-        runner = CliRunner()
-
-        result = runner.invoke(cli.main, ["frpc", "config"])
-
-        assert result.exit_code == 0, result.output
-        config = FrpcConfig.load(frpc_cli.FRPC_CONFIG_FILE)
-        assert config.server_addr == "1.2.3.4"
-
-    def test_auto_derives_token_via_live_lookup(
-        self, isolated_paths: Path, fake_collaborators: dict
-    ) -> None:
-        runner = CliRunner()
-
-        result = runner.invoke(cli.main, _config_args())
-
-        assert result.exit_code == 0, result.output
-        config = FrpcConfig.load(frpc_cli.FRPC_CONFIG_FILE)
-        assert config.token == "fake-token"
-
-    def test_explicit_flags_override_infra_config(
-        self, isolated_paths: Path, fake_collaborators: dict
-    ) -> None:
-        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
-            frpc_cli.INFRA_CONFIG_FILE
-        )
-        runner = CliRunner()
-
-        result = runner.invoke(
-            cli.main,
-            [
-                "frpc",
-                "config",
-                "--server-addr",
-                "9.9.9.9",
-                "--base-domain",
-                "other.com",
-                "--region",
-                "us-east-1",
-                "--token",
-                "explicit-token",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        config = FrpcConfig.load(frpc_cli.FRPC_CONFIG_FILE)
-        assert config.server_addr == "9.9.9.9"
-        assert config.base_domain == "other.com"
-        assert config.region == "us-east-1"
-        assert config.token == "explicit-token"
-
-    def test_errors_when_region_unresolvable(
-        self, isolated_paths: Path, fake_collaborators: dict
-    ) -> None:
-        runner = CliRunner()
-
-        result = runner.invoke(
-            cli.main,
-            [
-                "frpc",
-                "config",
-                "--server-addr",
-                "1.2.3.4",
-                "--base-domain",
-                "dasbd72.com",
-            ],
-        )
+        result = runner.invoke(cli.main, args)
 
         assert result.exit_code != 0
-        assert "--region" in result.output
-        assert "infra config" in result.output
-
-    def test_errors_when_base_domain_unresolvable(
-        self, isolated_paths: Path, fake_collaborators: dict
-    ) -> None:
-        runner = CliRunner()
-
-        result = runner.invoke(
-            cli.main,
-            [
-                "frpc",
-                "config",
-                "--server-addr",
-                "1.2.3.4",
-                "--region",
-                "ap-northeast-1",
-            ],
-        )
-
-        assert result.exit_code != 0
-        assert "--base-domain" in result.output
-        assert "infra config" in result.output
-
-    def test_errors_when_server_addr_unresolvable(
-        self,
-        isolated_paths: Path,
-        fake_collaborators: dict,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(frpc_cli, "describe_stack", _stack_not_found)
-        runner = CliRunner()
-
-        result = runner.invoke(
-            cli.main,
-            [
-                "frpc",
-                "config",
-                "--base-domain",
-                "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-            ],
-        )
-
-        assert result.exit_code != 0
-        assert "--server-addr" in result.output
-        assert "infra deploy" in result.output
-
-    def test_errors_when_token_unresolvable(
-        self,
-        isolated_paths: Path,
-        fake_collaborators: dict,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(frpc_cli.token_module, "fetch_token", _param_not_found)
-        runner = CliRunner()
-
-        result = runner.invoke(cli.main, _config_args())
-
-        assert result.exit_code != 0
-        assert "--token" in result.output
-        assert "infra deploy" in result.output
+        assert missing in result.output
 
     def test_frpc_toml_is_chmod_600(
         self, isolated_paths: Path, fake_collaborators: dict
@@ -308,35 +156,6 @@ class TestConfigCommand:
         assert ["systemctl", "--user", "restart", "frpc.service"] in fake_collaborators[
             "subprocess_calls"
         ]
-
-    def test_reraises_unexpected_lookup_errors_clearly(
-        self,
-        isolated_paths: Path,
-        fake_collaborators: dict,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        def broken_lookup(_region: str) -> dict:
-            raise ClientError(
-                {"Error": {"Code": "AccessDenied", "Message": "nope"}}, "DescribeStacks"
-            )
-
-        monkeypatch.setattr(frpc_cli, "describe_stack", broken_lookup)
-        runner = CliRunner()
-
-        result = runner.invoke(
-            cli.main,
-            [
-                "frpc",
-                "config",
-                "--base-domain",
-                "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-            ],
-        )
-
-        assert result.exit_code != 0
-        assert "AccessDenied" in result.output or "nope" in result.output
 
     def test_does_not_wipe_existing_services(
         self, isolated_paths: Path, fake_collaborators: dict
@@ -383,8 +202,8 @@ class TestConfigCommand:
                 "9.9.9.9",
                 "--base-domain",
                 "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
+                "--token",
+                "fake-token",
             ],
             input="n\n",
         )
@@ -407,8 +226,8 @@ class TestConfigCommand:
                 "9.9.9.9",
                 "--base-domain",
                 "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
+                "--token",
+                "fake-token",
             ],
             input="y\n",
         )
@@ -431,8 +250,8 @@ class TestConfigCommand:
                 "9.9.9.9",
                 "--base-domain",
                 "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
+                "--token",
+                "fake-token",
                 "--yes",
             ],
         )
@@ -466,8 +285,6 @@ class TestRenderCommand:
                 "1.2.3.4",
                 "--base-domain",
                 "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
                 "--token",
                 "explicit-token",
             ],
@@ -482,21 +299,7 @@ class TestRenderCommand:
     ) -> None:
         runner = CliRunner()
 
-        runner.invoke(
-            cli.main,
-            [
-                "frpc",
-                "render",
-                "--server-addr",
-                "1.2.3.4",
-                "--base-domain",
-                "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-                "--token",
-                "explicit-token",
-            ],
-        )
+        runner.invoke(cli.main, _render_args())
 
         assert not frpc_cli.FRPC_CONFIG_FILE.exists()
         assert not frpc_cli.SERVICES_FILE.exists()
@@ -504,21 +307,7 @@ class TestRenderCommand:
         assert not frpc_cli.SYSTEMD_UNIT_FILE.exists()
         assert fake_collaborators["subprocess_calls"] == []
 
-    def test_auto_derives_from_infra_config_and_live_lookups(
-        self, isolated_paths: Path, fake_collaborators: dict
-    ) -> None:
-        InfraConfig(domain="dasbd72.com", region="ap-northeast-1").save(
-            frpc_cli.INFRA_CONFIG_FILE
-        )
-        runner = CliRunner()
-
-        result = runner.invoke(cli.main, ["frpc", "render"])
-
-        assert result.exit_code == 0, result.output
-        assert 'serverAddr = "1.2.3.4"' in result.output
-        assert 'auth.token = "fake-token"' in result.output
-
-    def test_renders_proxy_block_from_service_flag(
+    def test_requires_token(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
         runner = CliRunner()
@@ -532,13 +321,20 @@ class TestRenderCommand:
                 "1.2.3.4",
                 "--base-domain",
                 "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-                "--token",
-                "tok",
-                "--service",
-                "openwebui=192.168.50.10:8080",
             ],
+        )
+
+        assert result.exit_code != 0
+        assert "--token" in result.output
+
+    def test_renders_proxy_block_from_service_flag(
+        self, isolated_paths: Path, fake_collaborators: dict
+    ) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            cli.main,
+            [*_render_args(), "--service", "openwebui=192.168.50.10:8080"],
         )
 
         assert result.exit_code == 0, result.output
@@ -552,20 +348,7 @@ class TestRenderCommand:
 
         result = runner.invoke(
             cli.main,
-            [
-                "frpc",
-                "render",
-                "--server-addr",
-                "1.2.3.4",
-                "--base-domain",
-                "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-                "--token",
-                "tok",
-                "--service",
-                "wireguard=127.0.0.1:51820/udp:51820",
-            ],
+            [*_render_args(), "--service", "wireguard=127.0.0.1:51820/udp:51820"],
         )
 
         assert result.exit_code == 0, result.output
@@ -581,20 +364,7 @@ class TestRenderCommand:
 
         result = runner.invoke(
             cli.main,
-            [
-                "frpc",
-                "render",
-                "--server-addr",
-                "1.2.3.4",
-                "--base-domain",
-                "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-                "--token",
-                "tok",
-                "--service",
-                "wireguard=127.0.0.1:51820/udp:not-a-port",
-            ],
+            [*_render_args(), "--service", "wireguard=127.0.0.1:51820/udp:not-a-port"],
         )
 
         assert result.exit_code != 0
@@ -607,50 +377,11 @@ class TestRenderCommand:
 
         result = runner.invoke(
             cli.main,
-            [
-                "frpc",
-                "render",
-                "--server-addr",
-                "1.2.3.4",
-                "--base-domain",
-                "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-                "--token",
-                "tok",
-                "--service",
-                "openwebui-no-target",
-            ],
+            [*_render_args(), "--service", "openwebui-no-target"],
         )
 
         assert result.exit_code != 0
         assert "--service" in result.output
-
-    def test_errors_when_token_unresolvable(
-        self,
-        isolated_paths: Path,
-        fake_collaborators: dict,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(frpc_cli.token_module, "fetch_token", _param_not_found)
-        runner = CliRunner()
-
-        result = runner.invoke(
-            cli.main,
-            [
-                "frpc",
-                "render",
-                "--server-addr",
-                "1.2.3.4",
-                "--base-domain",
-                "dasbd72.com",
-                "--region",
-                "ap-northeast-1",
-            ],
-        )
-
-        assert result.exit_code != 0
-        assert "--token" in result.output
 
 
 @pytest.mark.parametrize(
@@ -696,18 +427,6 @@ def test_add_registers_service_and_restarts(
     assert ["systemctl", "--user", "restart", "frpc.service"] in fake_collaborators[
         "subprocess_calls"
     ]
-
-
-def test_add_does_not_call_ssm(
-    isolated_paths: Path, fake_collaborators: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    runner = CliRunner()
-    runner.invoke(cli.main, _config_args())
-    monkeypatch.setattr(frpc_cli.token_module, "fetch_token", _param_not_found)
-
-    result = runner.invoke(cli.main, ["frpc", "add", "openwebui", "192.168.50.10:8080"])
-
-    assert result.exit_code == 0, result.output
 
 
 @pytest.mark.parametrize("proto", ["tcp", "udp"])

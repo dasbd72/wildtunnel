@@ -9,6 +9,8 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 
+from ..infra_config import FRP_TOKEN_PARAM
+
 _USER_DATA_TEMPLATE = Path(__file__).parent / "assets" / "user_data.sh"
 
 
@@ -30,7 +32,7 @@ class TunnelStack(Stack):
         vpc: ec2.IVpc | None = None,
         frp_bind_port: int = 7000,
         frp_vhost_http_port: int = 7080,
-        token_param_name: str = "/reverse-tunnel/frp-token",
+        token_param_name: str = FRP_TOKEN_PARAM,
         frp_version: str = "0.71.0",
         caddy_version: str = "2.9.1",
         extra_port_range: tuple[int, int] | None = None,

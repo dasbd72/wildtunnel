@@ -8,6 +8,7 @@ from typing import Any
 import boto3
 
 STACK_NAME = "AwsReverseTunnelStack"
+FRP_TOKEN_PARAM = "/reverse-tunnel/frp-token"
 
 
 @dataclasses.dataclass

@@ -405,3 +405,113 @@ class TestStatus:
 
         assert result.exit_code != 0
         assert "AccessDenied" in result.output or "nope" in result.output
+
+
+class TestInfo:
+    def test_requires_prior_config(
+        self, isolated_paths: Path, fake_collaborators: dict
+    ) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(infra_cli.infra, ["info"])
+
+        assert result.exit_code != 0
+        assert "infra config" in result.output
+
+    def test_prints_frpc_values_and_command(
+        self,
+        isolated_paths: Path,
+        fake_collaborators: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        monkeypatch.setattr(
+            infra_cli,
+            "describe_stack",
+            lambda _region: {
+                "Outputs": [{"OutputKey": "ElasticIp", "OutputValue": "1.2.3.4"}]
+            },
+        )
+        monkeypatch.setattr(
+            infra_cli.token_module, "fetch_token", lambda _param, _region: "s3cret"
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(infra_cli.infra, ["info"])
+
+        assert result.exit_code == 0, result.output
+        assert "server-addr:  1.2.3.4" in result.output
+        assert "base-domain:  dasbd72.com" in result.output
+        assert "s3cret" in result.output
+        # A copy-pasteable frpc config command.
+        assert "aws-reverse-tunnel frpc config" in result.output
+        assert "--server-addr 1.2.3.4" in result.output
+        assert "--token s3cret" in result.output
+
+    def test_errors_when_stack_not_found(
+        self,
+        isolated_paths: Path,
+        fake_collaborators: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+
+        def _not_found(_region: str) -> dict:
+            raise ClientError(
+                {"Error": {"Code": "ValidationError", "Message": "does not exist"}},
+                "DescribeStacks",
+            )
+
+        monkeypatch.setattr(infra_cli, "describe_stack", _not_found)
+        runner = CliRunner()
+
+        result = runner.invoke(infra_cli.infra, ["info"])
+
+        assert result.exit_code != 0
+        assert "infra deploy" in result.output
+
+    def test_errors_when_elastic_ip_output_missing(
+        self,
+        isolated_paths: Path,
+        fake_collaborators: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        monkeypatch.setattr(
+            infra_cli, "describe_stack", lambda _region: {"Outputs": []}
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(infra_cli.infra, ["info"])
+
+        assert result.exit_code != 0
+        assert "ElasticIp" in result.output
+
+    def test_errors_when_token_cannot_be_fetched(
+        self,
+        isolated_paths: Path,
+        fake_collaborators: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        monkeypatch.setattr(
+            infra_cli,
+            "describe_stack",
+            lambda _region: {
+                "Outputs": [{"OutputKey": "ElasticIp", "OutputValue": "1.2.3.4"}]
+            },
+        )
+
+        def _boom(_param: str, _region: str) -> str:
+            raise ClientError(
+                {"Error": {"Code": "ParameterNotFound", "Message": "nope"}},
+                "GetParameter",
+            )
+
+        monkeypatch.setattr(infra_cli.token_module, "fetch_token", _boom)
+        runner = CliRunner()
+
+        result = runner.invoke(infra_cli.infra, ["info"])
+
+        assert result.exit_code != 0
+        assert "token" in result.output

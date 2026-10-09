@@ -33,11 +33,10 @@ def test_defaults() -> None:
     )
 
     assert config.server_port == 7000
-    assert config.region == "ap-northeast-1"
 
 
 def test_load_ignores_unknown_legacy_keys(tmp_path: Path) -> None:
-    # A settings file written before token_param was replaced by a cached token.
+    # A settings file written before region/token_param were dropped.
     path = tmp_path / "frpc-config.json"
     path.write_text(
         json.dumps(
@@ -46,6 +45,7 @@ def test_load_ignores_unknown_legacy_keys(tmp_path: Path) -> None:
                 "base_domain": "example.com",
                 "token": "secret",
                 "token_param": "/old/path",
+                "region": "ap-northeast-1",
             }
         )
     )
