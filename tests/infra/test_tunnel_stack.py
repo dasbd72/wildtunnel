@@ -152,6 +152,54 @@ def test_no_extra_port_range_opened_by_default() -> None:
     )
 
 
+def _user_data(template: Template) -> str:
+    template_json = template.to_json()
+    (launch_template,) = [
+        resource
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::EC2::Instance"
+    ]
+    user_data_b64 = launch_template["Properties"]["UserData"]["Fn::Base64"]
+    # Fn::Base64 wraps an Fn::Join whose parts include the literal script
+    # text; stringifying is enough to search it without re-implementing the
+    # intrinsic-function evaluator.
+    return str(user_data_b64)
+
+
+def test_user_data_wrapper_fetches_token_from_ssm() -> None:
+    template = _build_template()
+
+    user_data = _user_data(template)
+    assert "aws ssm get-parameter" in user_data
+    assert "/reverse-tunnel/frp-token" in user_data
+
+
+def test_user_data_wrapper_exports_full_env_var_contract() -> None:
+    template = _build_template()
+
+    user_data = _user_data(template)
+    for var in (
+        "DOMAIN",
+        "FRP_TOKEN",
+        "FRP_VERSION",
+        "CADDY_VERSION",
+        "FRP_BIND_PORT",
+        "FRP_VHOST_HTTP_PORT",
+        "ALLOW_PORTS",
+    ):
+        assert f"export {var}=" in user_data, f"missing export of {var}"
+
+
+def test_user_data_wrapper_invokes_generic_installer_script() -> None:
+    template = _build_template()
+
+    user_data = _user_data(template)
+    assert "/tmp/server-setup.sh" in user_data
+    # The generic installer's own content (e.g. the swap-file setup that
+    # has nothing to do with AWS) must be embedded verbatim, not re-derived.
+    assert "mkswap /swapfile" in user_data
+
+
 def test_security_group_opens_extra_tcp_and_udp_port_range_when_configured() -> None:
     template = _build_template(extra_port_range=(20000, 20100))
 

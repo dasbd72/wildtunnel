@@ -12,6 +12,9 @@ from constructs import Construct
 from ..infra_config import FRP_TOKEN_PARAM
 
 _USER_DATA_TEMPLATE = Path(__file__).parent / "assets" / "user_data.sh"
+_SERVER_SETUP_SCRIPT = (
+    Path(__file__).parent.parent / "server" / "assets" / "server-setup.sh"
+)
 
 
 class TunnelStack(Stack):
@@ -140,6 +143,7 @@ class TunnelStack(Stack):
             "__FRP_VERSION__": frp_version,
             "__CADDY_VERSION__": caddy_version,
             "__ALLOW_PORTS__": allow_ports,
+            "__SERVER_SETUP_SCRIPT__": _SERVER_SETUP_SCRIPT.read_text(),
         }.items():
             script = script.replace(placeholder, value)
         user_data.add_commands(script)
