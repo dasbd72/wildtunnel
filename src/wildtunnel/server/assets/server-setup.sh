@@ -66,8 +66,29 @@ rm -f /tmp/caddy.tar.gz
 # DNS-01 challenge and no wildcard cert; each subdomain just needs to
 # resolve to this host's public IP (DNS-only, not Cloudflare-proxied) with
 # port 80 reachable. Caddy also handles renewal itself, so no certbot timer.
+#
+# Caddy refuses to start with on-demand TLS unless a permission check is
+# configured (abuse prevention: without one, anyone could make it request
+# certs for arbitrary hostnames and burn the Let's Encrypt rate limit). The
+# site block below is already scoped to *.${DOMAIN}, so the check only
+# needs to rubber-stamp requests Caddy already restricted by that match.
+# The ask site must keep the explicit http:// scheme: without it, Caddy's
+# auto-HTTPS wraps 127.0.0.1:9123 in its own (internal-CA) TLS, which the
+# plain-http `ask` callback below can't speak to, and cert issuance for
+# every real subdomain silently fails.
+CADDY_ASK_ADDR="http://127.0.0.1:9123"
 mkdir -p /etc/caddy
 cat > /etc/caddy/Caddyfile <<EOF
+{
+    on_demand_tls {
+        ask ${CADDY_ASK_ADDR}/ask
+    }
+}
+
+${CADDY_ASK_ADDR} {
+    respond /ask 200
+}
+
 *.${DOMAIN} {
     tls {
         on_demand

@@ -233,6 +233,22 @@ def test_user_data_wrapper_invokes_generic_installer_script() -> None:
     assert "mkswap /swapfile" in user_data
 
 
+def test_user_data_wrapper_configures_on_demand_tls_permission_check() -> None:
+    template = _build_template()
+
+    user_data = _user_data(template)
+    # Caddy refuses to start with on-demand TLS unless a permission check
+    # is configured; without this, Caddy (and therefore all HTTP tunnels)
+    # never comes up.
+    assert "on_demand_tls" in user_data
+    assert 'CADDY_ASK_ADDR="http://127.0.0.1:9123"' in user_data
+    assert "ask ${CADDY_ASK_ADDR}/ask" in user_data
+    # The ask site itself must keep an explicit http:// scheme, or Caddy's
+    # auto-HTTPS wraps it in TLS and the plain-http ask callback can't
+    # reach it, silently failing every real cert issuance.
+    assert "${CADDY_ASK_ADDR} {" in user_data
+
+
 def test_security_group_opens_extra_tcp_and_udp_port_range_when_configured() -> None:
     template = _build_template(extra_port_range=(20000, 20100))
 
