@@ -152,6 +152,18 @@ uv run pre-commit run --all-files
   without a clone of this repository. A future provider would get its own
   sibling directory here, for example `providers/aws_lightsail/`.
 
+**Adding a provider:** `scripts/new_provider.py` is a maintainer-only
+scaffold, not shipped in the installed package and not wired into the
+`wildtunnel` CLI. It generates `providers/<name>/` and
+`tests/providers/<name>/` skeletons that mirror `providers/aws_ec2/`'s
+shape (a Click group, a config dataclass, matching test stubs) and prints
+the remaining manual steps. It refuses to run if `providers/<name>/`
+already exists.
+
+```sh
+uv run python scripts/new_provider.py aws_lightsail
+```
+
 **Known limitation:** The CDK application code makes the frp authentication
 token. Thus the plaintext token goes into the synthesized CloudFormation
 template. AWS stores the token as a SecureString. However, a person who can
