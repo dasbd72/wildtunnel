@@ -430,6 +430,70 @@ def test_add_registers_service_and_restarts(
     ]
 
 
+def test_add_warns_and_aborts_when_overwriting_existing_service_by_default(
+    isolated_paths: Path, fake_collaborators: dict
+) -> None:
+    runner = CliRunner()
+    runner.invoke(cli.main, _config_args())
+    runner.invoke(cli.main, ["frpc", "add", "minecraft", "127.0.0.1:25565"])
+
+    result = runner.invoke(
+        cli.main, ["frpc", "add", "minecraft", "127.0.0.1:24454"], input="n\n"
+    )
+
+    assert result.exit_code != 0
+    assert "Currently configured" in result.output
+    assert load_services(frpc_cli.SERVICES_FILE) == {
+        "minecraft": Service(target="127.0.0.1:25565")
+    }
+
+
+def test_add_overwrites_existing_service_when_confirmed(
+    isolated_paths: Path, fake_collaborators: dict
+) -> None:
+    runner = CliRunner()
+    runner.invoke(cli.main, _config_args())
+    runner.invoke(cli.main, ["frpc", "add", "minecraft", "127.0.0.1:25565"])
+
+    result = runner.invoke(
+        cli.main, ["frpc", "add", "minecraft", "127.0.0.1:24454"], input="y\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert load_services(frpc_cli.SERVICES_FILE) == {
+        "minecraft": Service(target="127.0.0.1:24454")
+    }
+
+
+def test_add_yes_flag_skips_confirmation_when_overwriting(
+    isolated_paths: Path, fake_collaborators: dict
+) -> None:
+    runner = CliRunner()
+    runner.invoke(cli.main, _config_args())
+    runner.invoke(cli.main, ["frpc", "add", "minecraft", "127.0.0.1:25565"])
+
+    result = runner.invoke(
+        cli.main, ["frpc", "add", "minecraft", "127.0.0.1:24454", "--yes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert load_services(frpc_cli.SERVICES_FILE) == {
+        "minecraft": Service(target="127.0.0.1:24454")
+    }
+
+
+def test_add_does_not_prompt_when_re_adding_identical_service(
+    isolated_paths: Path, fake_collaborators: dict
+) -> None:
+    runner = CliRunner()
+    runner.invoke(cli.main, _config_args())
+    runner.invoke(cli.main, ["frpc", "add", "minecraft", "127.0.0.1:25565"])
+
+    result = runner.invoke(cli.main, ["frpc", "add", "minecraft", "127.0.0.1:25565"])
+
+    assert result.exit_code == 0, result.output
+
+
 @pytest.mark.parametrize("proto", ["tcp", "udp"])
 def test_add_with_remote_port_creates_tcp_or_udp_proxy(
     isolated_paths: Path, fake_collaborators: dict, proto: str

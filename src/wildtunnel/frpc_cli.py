@@ -225,7 +225,14 @@ def config(
     default=None,
     help="Public port to bind on the frps server. Required for --proto tcp/udp.",
 )
-def add(name: str, target: str, proto: str, remote_port: int | None) -> None:
+@click.option(
+    "--yes",
+    is_flag=True,
+    help="Overwrite an existing service with the same name without confirming.",
+)
+def add(
+    name: str, target: str, proto: str, remote_port: int | None, yes: bool
+) -> None:
     """Expose a local TARGET (host:port) at NAME.<base-domain>, or on --remote-port."""
     try:
         parse_target(target)
@@ -237,6 +244,8 @@ def add(name: str, target: str, proto: str, remote_port: int | None) -> None:
         raise click.BadParameter(str(exc), param_hint="--remote-port") from exc
     cfg = _load_config()
     services = load_services(SERVICES_FILE)
+    if name in services:
+        confirm_overwrite(services[name], service, yes=yes)
     services[name] = service
     _apply_services(cfg, services)
     if proto == "http":
