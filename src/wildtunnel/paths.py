@@ -25,21 +25,25 @@ FRPC_TOML_FILE = CONFIG_DIR / "frpc.toml"
 AWS_EC2_CONFIG_FILE = CONFIG_DIR / "config.json"
 FRP_TOKEN_FILE = CONFIG_DIR / "frp-token"
 
-# aws_lightsail deploys via direct boto3 calls (no CDK/CloudFormation), so
-# it has no stack-update cycle and reuses this same config.json - only one
-# provider is configured at a time, discriminated by the top-level
-# "provider" field - rather than needing its own file.
-AWS_LIGHTSAIL_CONFIG_FILE = AWS_EC2_CONFIG_FILE
+# Each provider keeps its own config file. An earlier version had both
+# providers share AWS_EC2_CONFIG_FILE (discriminated by a top-level
+# "provider" field), on the assumption that only one provider is ever
+# deployed at a time - but a user can have an aws-ec2 stack AND an
+# aws-lightsail instance deployed simultaneously, and switching the
+# "active" provider overwrote the other one's region, breaking its own
+# `status`/`destroy`/etc. Separate files let both stay manageable at once.
+AWS_LIGHTSAIL_CONFIG_FILE = CONFIG_DIR / "aws-lightsail-config.json"
 
 
 def other_provider(path: Path, own_provider: str) -> str | None:
     """Return the config file's provider tag if it's for a different provider.
 
-    Every provider's Config.load() raises KeyError when config.json
-    currently belongs to a different provider (they share the one file
-    above). Each provider's CLI uses this to distinguish "this file is
-    someone else's provider" from "this file is genuinely corrupt", so it
-    can report (or route around) each case correctly.
+    Each provider now has its own config file, so this should only ever
+    trigger if a file was manually copied or edited into the wrong
+    provider's shape. Config.load() raises KeyError in that case; this
+    distinguishes "this file is someone else's provider" from "this file
+    is genuinely corrupt", so the caller can report (or route around)
+    each case correctly instead of showing a generic parse error.
     """
     try:
         data = json.loads(path.read_text())
