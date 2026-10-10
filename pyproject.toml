@@ -55,5 +55,5 @@ disallow_any_generics = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["aws_reverse_tunnel.cli", "aws_reverse_tunnel.infra_cli", "aws_reverse_tunnel.frpc_cli"]
+module = ["aws_reverse_tunnel.cli", "aws_reverse_tunnel.providers.aws_ec2.cli", "aws_reverse_tunnel.frpc_cli"]
 implicit_reexport = true

@@ -5,14 +5,14 @@ import pytest
 from botocore.exceptions import ClientError
 from click.testing import CliRunner
 
-from aws_reverse_tunnel import infra_cli
-from aws_reverse_tunnel.infra_config import InfraConfig
+from aws_reverse_tunnel.providers.aws_ec2 import cli as aws_ec2_cli
+from aws_reverse_tunnel.providers.aws_ec2.config import AwsEc2Config
 
 
 @pytest.fixture(autouse=True)
 def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setattr(infra_cli, "INFRA_CONFIG_FILE", tmp_path / "infra-config.json")
-    monkeypatch.setattr(infra_cli, "INFRA_CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(aws_ec2_cli, "AWS_EC2_CONFIG_FILE", tmp_path / "config.json")
+    monkeypatch.setattr(aws_ec2_cli, "AWS_EC2_CACHE_DIR", tmp_path / "cache")
     return tmp_path
 
 
@@ -20,13 +20,13 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def fake_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict:
     recorded: dict = {"subprocess_calls": []}
 
-    monkeypatch.setattr(infra_cli.shutil, "which", lambda _name: "/usr/bin/cdk")
-    monkeypatch.setattr(infra_cli.importlib, "import_module", lambda _name: object())
+    monkeypatch.setattr(aws_ec2_cli.shutil, "which", lambda _name: "/usr/bin/cdk")
+    monkeypatch.setattr(aws_ec2_cli.importlib, "import_module", lambda _name: object())
 
     class FakeSession:
         region_name = "ap-northeast-1"
 
-    monkeypatch.setattr(infra_cli.boto3, "Session", FakeSession)
+    monkeypatch.setattr(aws_ec2_cli.boto3, "Session", FakeSession)
 
     def fake_run(args, **kwargs):
         recorded["subprocess_calls"].append({"args": args, "cwd": kwargs.get("cwd")})
@@ -36,12 +36,12 @@ def fake_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict:
 
         return Result()
 
-    monkeypatch.setattr(infra_cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(aws_ec2_cli.subprocess, "run", fake_run)
     return recorded
 
 
-def _saved_config(path: Path) -> InfraConfig:
-    return InfraConfig.load(path)
+def _saved_config(path: Path) -> AwsEc2Config:
+    return AwsEc2Config.load(path)
 
 
 class TestConfig:
@@ -49,21 +49,23 @@ class TestConfig:
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
-        config = _saved_config(infra_cli.INFRA_CONFIG_FILE)
-        assert config == InfraConfig(domain="dasbd72.com", region="us-east-1")
+        config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
+        assert config == AwsEc2Config(domain="dasbd72.com", region="us-east-1")
 
     def test_defaults_region_from_boto3_session(self, isolated_paths: Path) -> None:
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["config", "--domain", "dasbd72.com"])
+        result = runner.invoke(
+            aws_ec2_cli.aws_ec2, ["config", "--domain", "dasbd72.com"]
+        )
 
         assert result.exit_code == 0, result.output
-        config = _saved_config(infra_cli.INFRA_CONFIG_FILE)
+        config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         assert config.region == "ap-northeast-1"
 
     def test_errors_when_no_region_available(
@@ -72,66 +74,85 @@ class TestConfig:
         class NoRegionSession:
             region_name = None
 
-        monkeypatch.setattr(infra_cli.boto3, "Session", NoRegionSession)
+        monkeypatch.setattr(aws_ec2_cli.boto3, "Session", NoRegionSession)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["config", "--domain", "dasbd72.com"])
+        result = runner.invoke(
+            aws_ec2_cli.aws_ec2, ["config", "--domain", "dasbd72.com"]
+        )
 
         assert result.exit_code != 0
         assert "--region" in result.output
-        assert not infra_cli.INFRA_CONFIG_FILE.exists()
+        assert not aws_ec2_cli.AWS_EC2_CONFIG_FILE.exists()
+
+    def test_errors_cleanly_on_malformed_config_file(
+        self, isolated_paths: Path
+    ) -> None:
+        # A config file written before this schema existed (no "aws_ec2" key)
+        # must fail with a clean message, not a raw KeyError traceback.
+        aws_ec2_cli.AWS_EC2_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        aws_ec2_cli.AWS_EC2_CONFIG_FILE.write_text(
+            '{"domain": "dasbd72.com", "region": "us-east-1"}'
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "aws-ec2 config" in result.output
 
     def test_prompts_before_overwriting_changed_config(
         self, isolated_paths: Path
     ) -> None:
-        InfraConfig(domain="old.com", region="us-east-1").save(
-            infra_cli.INFRA_CONFIG_FILE
+        AwsEc2Config(domain="old.com", region="us-east-1").save(
+            aws_ec2_cli.AWS_EC2_CONFIG_FILE
         )
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             ["config", "--domain", "new.com", "--region", "us-east-1"],
             input="n\n",
         )
 
         assert result.exit_code != 0
-        assert _saved_config(infra_cli.INFRA_CONFIG_FILE).domain == "old.com"
+        assert _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE).domain == "old.com"
 
     def test_overwrites_when_confirmed(self, isolated_paths: Path) -> None:
-        InfraConfig(domain="old.com", region="us-east-1").save(
-            infra_cli.INFRA_CONFIG_FILE
+        AwsEc2Config(domain="old.com", region="us-east-1").save(
+            aws_ec2_cli.AWS_EC2_CONFIG_FILE
         )
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             ["config", "--domain", "new.com", "--region", "us-east-1"],
             input="y\n",
         )
 
         assert result.exit_code == 0, result.output
-        assert _saved_config(infra_cli.INFRA_CONFIG_FILE).domain == "new.com"
+        assert _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE).domain == "new.com"
 
     def test_yes_flag_skips_confirmation(self, isolated_paths: Path) -> None:
-        InfraConfig(domain="old.com", region="us-east-1").save(
-            infra_cli.INFRA_CONFIG_FILE
+        AwsEc2Config(domain="old.com", region="us-east-1").save(
+            aws_ec2_cli.AWS_EC2_CONFIG_FILE
         )
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             ["config", "--domain", "new.com", "--region", "us-east-1", "--yes"],
         )
 
         assert result.exit_code == 0, result.output
-        assert _saved_config(infra_cli.INFRA_CONFIG_FILE).domain == "new.com"
+        assert _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE).domain == "new.com"
 
     def test_saves_extra_port_range_when_given(self, isolated_paths: Path) -> None:
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             [
                 "config",
                 "--domain",
@@ -144,22 +165,20 @@ class TestConfig:
         )
 
         assert result.exit_code == 0, result.output
-        config = _saved_config(infra_cli.INFRA_CONFIG_FILE)
-        assert config.extra_port_range_start == 20000
-        assert config.extra_port_range_end == 20100
+        config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
+        assert config.extra_port_range == (20000, 20100)
 
     def test_extra_port_range_defaults_to_unset(self, isolated_paths: Path) -> None:
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
-        config = _saved_config(infra_cli.INFRA_CONFIG_FILE)
-        assert config.extra_port_range_start is None
-        assert config.extra_port_range_end is None
+        config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
+        assert config.extra_port_range is None
 
     @pytest.mark.parametrize(
         "bad_range", ["garbage", "20100-20000", "0-100", "100-99999"]
@@ -170,7 +189,7 @@ class TestConfig:
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             [
                 "config",
                 "--domain",
@@ -186,21 +205,21 @@ class TestConfig:
         assert "--extra-port-range" in result.output
 
     def test_no_prompt_when_values_unchanged(self, isolated_paths: Path) -> None:
-        InfraConfig(domain="dasbd72.com", region="us-east-1").save(
-            infra_cli.INFRA_CONFIG_FILE
+        AwsEc2Config(domain="dasbd72.com", region="us-east-1").save(
+            aws_ec2_cli.AWS_EC2_CONFIG_FILE
         )
         runner = CliRunner()
 
         result = runner.invoke(
-            infra_cli.infra,
+            aws_ec2_cli.aws_ec2,
             ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
 
 
-def _seed_config(path: Path) -> InfraConfig:
-    config = InfraConfig(domain="dasbd72.com", region="ap-northeast-1")
+def _seed_config(path: Path) -> AwsEc2Config:
+    config = AwsEc2Config(domain="dasbd72.com", region="ap-northeast-1")
     config.save(path)
     return config
 
@@ -211,25 +230,28 @@ class TestDeployDestroyDiff:
     ) -> None:
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["deploy"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
 
         assert result.exit_code != 0
-        assert "infra config" in result.output
+        assert "aws-ec2 config" in result.output
         assert fake_collaborators["subprocess_calls"] == []
 
     def test_deploy_uses_saved_config_with_no_flags(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["deploy"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
 
         assert result.exit_code == 0, result.output
         call = fake_collaborators["subprocess_calls"][0]
-        assert call["cwd"] == infra_cli.INFRA_CACHE_DIR
+        assert call["cwd"] == aws_ec2_cli.AWS_EC2_CACHE_DIR
         assert call["args"][0] == "/usr/bin/cdk"
-        assert f"{sys.executable} -m aws_reverse_tunnel.infra.app" in call["args"]
+        assert (
+            f"{sys.executable} -m aws_reverse_tunnel.providers.aws_ec2.app"
+            in call["args"]
+        )
         assert "domain=dasbd72.com" in call["args"]
         assert "region=ap-northeast-1" in call["args"]
         assert call["args"][-1] == "deploy"
@@ -237,15 +259,14 @@ class TestDeployDestroyDiff:
     def test_deploy_passes_extra_port_range_context_when_configured(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        InfraConfig(
+        AwsEc2Config(
             domain="dasbd72.com",
             region="ap-northeast-1",
-            extra_port_range_start=20000,
-            extra_port_range_end=20100,
-        ).save(infra_cli.INFRA_CONFIG_FILE)
+            extra_port_range=(20000, 20100),
+        ).save(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["deploy"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
 
         assert result.exit_code == 0, result.output
         call_args = fake_collaborators["subprocess_calls"][0]["args"]
@@ -255,10 +276,10 @@ class TestDeployDestroyDiff:
     def test_deploy_omits_extra_port_range_context_when_unconfigured(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["deploy"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
 
         assert result.exit_code == 0, result.output
         call_args = " ".join(fake_collaborators["subprocess_calls"][0]["args"])
@@ -270,15 +291,15 @@ class TestDeployDestroyDiff:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
 
         def failing_run(args, **kwargs):
-            raise infra_cli.subprocess.CalledProcessError(1, args)
+            raise aws_ec2_cli.subprocess.CalledProcessError(1, args)
 
-        monkeypatch.setattr(infra_cli.subprocess, "run", failing_run)
+        monkeypatch.setattr(aws_ec2_cli.subprocess, "run", failing_run)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["deploy"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
 
         assert result.exit_code != 0
         assert isinstance(result.exception, SystemExit) or result.exception is None
@@ -287,10 +308,10 @@ class TestDeployDestroyDiff:
     def test_destroy_uses_saved_config(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["destroy"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["destroy"])
 
         assert result.exit_code == 0, result.output
         assert fake_collaborators["subprocess_calls"][0]["args"][-1] == "destroy"
@@ -298,10 +319,10 @@ class TestDeployDestroyDiff:
     def test_diff_uses_saved_config(
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["diff"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["diff"])
 
         assert result.exit_code == 0, result.output
         assert fake_collaborators["subprocess_calls"][0]["args"][-1] == "diff"
@@ -313,10 +334,10 @@ class TestStatus:
     ) -> None:
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["status"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["status"])
 
         assert result.exit_code != 0
-        assert "infra config" in result.output
+        assert "aws-ec2 config" in result.output
 
     def test_prints_stack_status_and_outputs(
         self,
@@ -324,7 +345,7 @@ class TestStatus:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
 
         class FakeCloudFormation:
             def describe_stacks(self, StackName: str) -> dict:
@@ -340,13 +361,13 @@ class TestStatus:
                 }
 
         monkeypatch.setattr(
-            infra_cli.boto3,
+            aws_ec2_cli.boto3,
             "client",
             lambda _service, region_name: FakeCloudFormation(),
         )
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["status"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["status"])
 
         assert result.exit_code == 0, result.output
         assert "CREATE_COMPLETE" in result.output
@@ -358,7 +379,7 @@ class TestStatus:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
 
         class NotFoundCloudFormation:
             def describe_stacks(self, StackName: str) -> dict:
@@ -368,16 +389,16 @@ class TestStatus:
                 )
 
         monkeypatch.setattr(
-            infra_cli.boto3,
+            aws_ec2_cli.boto3,
             "client",
             lambda _service, region_name: NotFoundCloudFormation(),
         )
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["status"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["status"])
 
         assert result.exit_code != 0
-        assert "infra deploy" in result.output
+        assert "aws-ec2 deploy" in result.output
 
     def test_reraises_unexpected_errors_clearly(
         self,
@@ -385,7 +406,7 @@ class TestStatus:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
 
         class BrokenCloudFormation:
             def describe_stacks(self, StackName: str) -> dict:
@@ -395,13 +416,13 @@ class TestStatus:
                 )
 
         monkeypatch.setattr(
-            infra_cli.boto3,
+            aws_ec2_cli.boto3,
             "client",
             lambda _service, region_name: BrokenCloudFormation(),
         )
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["status"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["status"])
 
         assert result.exit_code != 0
         assert "AccessDenied" in result.output or "nope" in result.output
@@ -413,10 +434,10 @@ class TestInfo:
     ) -> None:
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["info"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["info"])
 
         assert result.exit_code != 0
-        assert "infra config" in result.output
+        assert "aws-ec2 config" in result.output
 
     def test_prints_frpc_values_and_command(
         self,
@@ -424,20 +445,20 @@ class TestInfo:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         monkeypatch.setattr(
-            infra_cli,
+            aws_ec2_cli,
             "describe_stack",
             lambda _region: {
                 "Outputs": [{"OutputKey": "ElasticIp", "OutputValue": "1.2.3.4"}]
             },
         )
         monkeypatch.setattr(
-            infra_cli.token_module, "fetch_token", lambda _param, _region: "s3cret"
+            aws_ec2_cli.token_module, "fetch_token", lambda _param, _region: "s3cret"
         )
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["info"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["info"])
 
         assert result.exit_code == 0, result.output
         assert "server-addr:  1.2.3.4" in result.output
@@ -454,7 +475,7 @@ class TestInfo:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
 
         def _not_found(_region: str) -> dict:
             raise ClientError(
@@ -462,13 +483,13 @@ class TestInfo:
                 "DescribeStacks",
             )
 
-        monkeypatch.setattr(infra_cli, "describe_stack", _not_found)
+        monkeypatch.setattr(aws_ec2_cli, "describe_stack", _not_found)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["info"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["info"])
 
         assert result.exit_code != 0
-        assert "infra deploy" in result.output
+        assert "aws-ec2 deploy" in result.output
 
     def test_errors_when_elastic_ip_output_missing(
         self,
@@ -476,13 +497,13 @@ class TestInfo:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         monkeypatch.setattr(
-            infra_cli, "describe_stack", lambda _region: {"Outputs": []}
+            aws_ec2_cli, "describe_stack", lambda _region: {"Outputs": []}
         )
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["info"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["info"])
 
         assert result.exit_code != 0
         assert "ElasticIp" in result.output
@@ -493,9 +514,9 @@ class TestInfo:
         fake_collaborators: dict,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _seed_config(infra_cli.INFRA_CONFIG_FILE)
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         monkeypatch.setattr(
-            infra_cli,
+            aws_ec2_cli,
             "describe_stack",
             lambda _region: {
                 "Outputs": [{"OutputKey": "ElasticIp", "OutputValue": "1.2.3.4"}]
@@ -508,10 +529,10 @@ class TestInfo:
                 "GetParameter",
             )
 
-        monkeypatch.setattr(infra_cli.token_module, "fetch_token", _boom)
+        monkeypatch.setattr(aws_ec2_cli.token_module, "fetch_token", _boom)
         runner = CliRunner()
 
-        result = runner.invoke(infra_cli.infra, ["info"])
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["info"])
 
         assert result.exit_code != 0
         assert "token" in result.output

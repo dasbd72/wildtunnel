@@ -76,7 +76,7 @@ def _build_config(
     services: tuple[str, ...],
 ) -> tuple[FrpcConfig, dict[str, Service]]:
     # Decoupled from the infra side: every value comes straight from the
-    # caller's flags. Run `aws-reverse-tunnel infra info` on the deploying
+    # caller's flags. Run `aws-reverse-tunnel aws-ec2 info` on the deploying
     # machine to read them off the deployed stack.
     config = FrpcConfig(
         server_addr=server_addr,
@@ -116,13 +116,13 @@ def _common_options(f: Callable[..., Any]) -> Callable[..., Any]:
         "--server-addr",
         required=True,
         help="Public address of the frps server (EC2 Elastic IP or hostname). "
-        "Read it off the deployed stack with `aws-reverse-tunnel infra info`.",
+        "Read it off the deployed stack with `aws-reverse-tunnel aws-ec2 info`.",
     )(f)
     f = click.option(
         "--base-domain",
         required=True,
         help="Base domain the wildcard DNS record covers, e.g. dasbd72.com. "
-        "Read it off the deployed stack with `aws-reverse-tunnel infra info`.",
+        "Read it off the deployed stack with `aws-reverse-tunnel aws-ec2 info`.",
     )(f)
     f = click.option(
         "--server-port", default=DEFAULT_SERVER_PORT, show_default=True, type=int
@@ -131,7 +131,7 @@ def _common_options(f: Callable[..., Any]) -> Callable[..., Any]:
         "--token",
         required=True,
         help="The frp auth token. Read it off the deployed stack with "
-        "`aws-reverse-tunnel infra info`.",
+        "`aws-reverse-tunnel aws-ec2 info`.",
     )(f)
     f = click.option(
         "--service",

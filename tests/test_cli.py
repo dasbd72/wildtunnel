@@ -3,13 +3,13 @@ from click.testing import CliRunner
 from aws_reverse_tunnel import cli
 
 
-def test_main_wires_up_infra_and_frpc_subgroups() -> None:
+def test_main_wires_up_aws_ec2_and_frpc_subgroups() -> None:
     runner = CliRunner()
 
     result = runner.invoke(cli.main, ["--help"])
 
     assert result.exit_code == 0, result.output
-    assert "infra" in result.output
+    assert "aws-ec2" in result.output
     assert "frpc" in result.output
 
 

@@ -5,8 +5,8 @@ import secrets
 
 import aws_cdk as cdk
 
-from ..infra_config import STACK_NAME
-from ..paths import FRP_TOKEN_FILE
+from ...paths import FRP_TOKEN_FILE
+from .config import STACK_NAME
 from .tunnel_stack import TunnelStack
 
 

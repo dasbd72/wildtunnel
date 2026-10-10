@@ -9,11 +9,11 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 
-from ..infra_config import FRP_TOKEN_PARAM
+from .config import FRP_TOKEN_PARAM
 
 _USER_DATA_TEMPLATE = Path(__file__).parent / "assets" / "user_data.sh"
 _SERVER_SETUP_SCRIPT = (
-    Path(__file__).parent.parent / "server" / "assets" / "server-setup.sh"
+    Path(__file__).parent.parent.parent / "server" / "assets" / "server-setup.sh"
 )
 
 
