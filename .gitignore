@@ -249,7 +249,7 @@ pyrightconfig.json
 # Claude Code runtime state (not project content)
 .claude/scheduled_tasks.lock
 
-# CDK (real cache lives under $XDG_CACHE_HOME/aws-reverse-tunnel/infra/,
+# CDK (real cache lives under $XDG_CACHE_HOME/wildtunnel/aws_ec2/,
 # outside the repo; these just catch stray local `cdk` invocations from here)
 cdk.out/
 cdk.context.json
