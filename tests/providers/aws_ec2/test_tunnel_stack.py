@@ -47,6 +47,28 @@ def test_security_group_allows_http_https_and_frp_control_port() -> None:
         )
 
 
+def test_security_group_allows_ping() -> None:
+    template = _build_template()
+
+    template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": Match.array_with(
+                [
+                    Match.object_like(
+                        {
+                            "CidrIp": "0.0.0.0/0",
+                            "IpProtocol": "icmp",
+                            "FromPort": 8,
+                            "ToPort": -1,
+                        }
+                    )
+                ]
+            )
+        },
+    )
+
+
 def test_instance_is_t4g_nano_arm() -> None:
     template = _build_template()
 

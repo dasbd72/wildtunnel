@@ -96,6 +96,9 @@ class TunnelStack(Stack):
         security_group.add_ingress_rule(
             ec2.Peer.any_ipv4(), ec2.Port.tcp(frp_bind_port), "frp control channel"
         )
+        security_group.add_ingress_rule(
+            ec2.Peer.any_ipv4(), ec2.Port.icmp_ping(), "ping (ICMP echo)"
+        )
         if extra_port_range is not None:
             start, end = extra_port_range
             security_group.add_ingress_rule(
