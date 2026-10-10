@@ -1,0 +1,434 @@
+from pathlib import Path
+
+import pytest
+from botocore.exceptions import ClientError
+from click.testing import CliRunner
+
+from wildtunnel.providers.aws_lightsail import cli as aws_lightsail_cli
+from wildtunnel.providers.aws_lightsail.config import AwsLightsailConfig
+
+
+@pytest.fixture(autouse=True)
+def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr(
+        aws_lightsail_cli, "AWS_LIGHTSAIL_CONFIG_FILE", tmp_path / "config.json"
+    )
+    monkeypatch.setattr(aws_lightsail_cli, "FRP_TOKEN_FILE", tmp_path / "frp-token")
+    return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def fake_default_region(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeSession:
+        region_name = "ap-northeast-1"
+
+    monkeypatch.setattr(aws_lightsail_cli.boto3, "Session", FakeSession)
+
+
+def _seed_config(path: Path, **overrides: object) -> None:
+    defaults: dict[str, object] = {"domain": "dasbd72.com", "region": "ap-northeast-1"}
+    defaults.update(overrides)
+    AwsLightsailConfig(**defaults).save(path)  # type: ignore[arg-type]
+
+
+def _saved_config(path: Path) -> AwsLightsailConfig:
+    return AwsLightsailConfig.load(path)
+
+
+class TestConfig:
+    def test_saves_with_explicit_flags(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
+        )
+
+        assert result.exit_code == 0, result.output
+        config = _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        assert config == AwsLightsailConfig(domain="dasbd72.com", region="us-east-1")
+
+    def test_defaults_region_from_boto3_session(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail, ["config", "--domain", "dasbd72.com"]
+        )
+
+        assert result.exit_code == 0, result.output
+        config = _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        assert config.region == "ap-northeast-1"
+
+    def test_errors_clearly_when_no_region_available(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class NoRegionSession:
+            region_name = None
+
+        monkeypatch.setattr(aws_lightsail_cli.boto3, "Session", NoRegionSession)
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail, ["config", "--domain", "dasbd72.com"]
+        )
+
+        assert result.exit_code != 0
+        assert "--region" in result.output
+
+    def test_rejects_malformed_extra_port_range(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            [
+                "config",
+                "--domain",
+                "dasbd72.com",
+                "--extra-port-range",
+                "not-a-range",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--extra-port-range" in result.output
+
+    def test_prompts_before_overwriting_changed_values(
+        self, isolated_paths: Path
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE, domain="old.com")
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["config", "--domain", "new.com", "--region", "ap-northeast-1"],
+            input="n\n",
+        )
+
+        assert result.exit_code != 0
+        assert _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE).domain == (
+            "old.com"
+        )
+
+    def test_yes_flag_skips_confirmation(self, isolated_paths: Path) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE, domain="old.com")
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            [
+                "config",
+                "--domain",
+                "new.com",
+                "--region",
+                "ap-northeast-1",
+                "--yes",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE).domain == (
+            "new.com"
+        )
+
+    def test_overwrites_cleanly_when_switching_from_a_different_provider(
+        self, isolated_paths: Path
+    ) -> None:
+        aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE.write_text(
+            '{"provider": "aws-ec2", "domain": "old.com", '
+            '"extra_port_range": null, "aws_ec2": {"region": "us-east-1"}}'
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["config", "--domain", "new.com", "--region", "ap-northeast-1"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE) == (
+            AwsLightsailConfig(domain="new.com", region="ap-northeast-1")
+        )
+
+
+class TestDeploy:
+    def test_requires_prior_config(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code != 0
+        assert "aws-lightsail config" in result.output
+
+    def test_errors_clearly_when_config_is_for_a_different_provider(
+        self, isolated_paths: Path
+    ) -> None:
+        aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE.write_text(
+            '{"provider": "aws-ec2", "domain": "old.com", '
+            '"extra_port_range": null, "aws_ec2": {"region": "us-east-1"}}'
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code != 0
+        assert "aws-ec2" in result.output
+        assert "aws-lightsail config" in result.output
+
+    def test_deploys_and_prints_public_ip(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli,
+            "deploy_instance",
+            lambda _config, _token: "1.2.3.4",
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code == 0, result.output
+        assert "1.2.3.4" in result.output
+
+    def test_generates_token_once_and_reuses_it(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        seen_tokens: list[str] = []
+
+        def _fake_deploy(_config: object, token: str) -> str:
+            seen_tokens.append(token)
+            return "1.2.3.4"
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _fake_deploy)
+        runner = CliRunner()
+
+        runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+        runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert len(seen_tokens) == 2
+        assert seen_tokens[0] == seen_tokens[1]
+
+    def test_wraps_client_error_clearly(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+
+        def _boom(_config: object, _token: str) -> str:
+            raise ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+                "CreateInstances",
+            )
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _boom)
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code != 0
+        assert "deploy failed" in result.output
+
+    def test_wraps_timeout_waiting_for_running_clearly(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+
+        def _boom(_config: object, _token: str) -> str:
+            raise TimeoutError("instance 'wildtunnel' did not reach running in time")
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _boom)
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code != 0
+        assert "deploy failed" in result.output
+
+
+class TestDestroy:
+    def test_requires_prior_config(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["destroy"])
+
+        assert result.exit_code != 0
+        assert "aws-lightsail config" in result.output
+
+    def test_destroys(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        calls = []
+        monkeypatch.setattr(
+            aws_lightsail_cli, "destroy_instance", lambda region: calls.append(region)
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["destroy"])
+
+        assert result.exit_code == 0, result.output
+        assert calls == ["ap-northeast-1"]
+
+
+class TestStatus:
+    def test_reports_not_deployed(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli, "describe_instance", lambda _region: None
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["status"])
+
+        assert result.exit_code == 0, result.output
+        assert "aws-lightsail deploy" in result.output
+
+    def test_reports_live_instance_state(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli,
+            "describe_instance",
+            lambda _region: {
+                "state": {"name": "running"},
+                "publicIpAddress": "1.2.3.4",
+                "isStaticIp": True,
+            },
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["status"])
+
+        assert result.exit_code == 0, result.output
+        assert "running" in result.output
+        assert "1.2.3.4" in result.output
+
+
+class TestDiff:
+    def test_reports_not_deployed(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli, "describe_port_states", lambda _region: None
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["diff"])
+
+        assert result.exit_code == 0, result.output
+        assert "aws-lightsail deploy" in result.output
+
+    def test_reports_in_sync_when_no_drift(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli,
+            "describe_port_states",
+            lambda _region: [
+                {
+                    "fromPort": 80,
+                    "toPort": 80,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+                {
+                    "fromPort": 443,
+                    "toPort": 443,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+                {
+                    "fromPort": 7000,
+                    "toPort": 7000,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+                {
+                    "fromPort": -1,
+                    "toPort": -1,
+                    "protocol": "icmp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+            ],
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["diff"])
+
+        assert result.exit_code == 0, result.output
+        assert "in sync" in result.output
+
+    def test_reports_drift(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli, "describe_port_states", lambda _region: []
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["diff"])
+
+        assert result.exit_code == 0, result.output
+        assert "+ open tcp 80-80" in result.output
+
+
+class TestInfo:
+    def test_requires_deployed_instance(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli, "describe_instance", lambda _region: None
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["info"])
+
+        assert result.exit_code != 0
+        assert "aws-lightsail deploy" in result.output
+
+    def test_requires_local_token_file(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli,
+            "describe_instance",
+            lambda _region: {"publicIpAddress": "1.2.3.4"},
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["info"])
+
+        assert result.exit_code != 0
+        assert "no local frp token" in result.output
+
+    def test_prints_server_addr_domain_and_token(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        aws_lightsail_cli.FRP_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        aws_lightsail_cli.FRP_TOKEN_FILE.write_text("s3cret-token")
+        monkeypatch.setattr(
+            aws_lightsail_cli,
+            "describe_instance",
+            lambda _region: {"publicIpAddress": "1.2.3.4"},
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["info"])
+
+        assert result.exit_code == 0, result.output
+        assert "server-addr:  1.2.3.4" in result.output
+        assert "base-domain:  dasbd72.com" in result.output
+        assert "token:        s3cret-token" in result.output

@@ -10,6 +10,7 @@ def test_main_wires_up_aws_ec2_and_frpc_subgroups() -> None:
 
     assert result.exit_code == 0, result.output
     assert "aws-ec2" in result.output
+    assert "aws-lightsail" in result.output
     assert "frpc" in result.output
 
 

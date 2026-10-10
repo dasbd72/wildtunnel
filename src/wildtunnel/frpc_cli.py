@@ -230,9 +230,7 @@ def config(
     is_flag=True,
     help="Overwrite an existing service with the same name without confirming.",
 )
-def add(
-    name: str, target: str, proto: str, remote_port: int | None, yes: bool
-) -> None:
+def add(name: str, target: str, proto: str, remote_port: int | None, yes: bool) -> None:
     """Expose a local TARGET (host:port) at NAME.<base-domain>, or on --remote-port."""
     try:
         parse_target(target)

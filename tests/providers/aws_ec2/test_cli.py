@@ -148,6 +148,25 @@ class TestConfig:
         assert result.exit_code == 0, result.output
         assert _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE).domain == "new.com"
 
+    def test_overwrites_cleanly_when_switching_from_a_different_provider(
+        self, isolated_paths: Path
+    ) -> None:
+        aws_ec2_cli.AWS_EC2_CONFIG_FILE.write_text(
+            '{"provider": "aws-lightsail", "domain": "old.com", '
+            '"extra_port_range": null, "aws_lightsail": {"region": "us-east-1"}}'
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_ec2_cli.aws_ec2,
+            ["config", "--domain", "new.com", "--region", "ap-northeast-1"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE) == AwsEc2Config(
+            domain="new.com", region="ap-northeast-1"
+        )
+
     def test_saves_extra_port_range_when_given(self, isolated_paths: Path) -> None:
         runner = CliRunner()
 
@@ -235,6 +254,21 @@ class TestDeployDestroyDiff:
         assert result.exit_code != 0
         assert "aws-ec2 config" in result.output
         assert fake_collaborators["subprocess_calls"] == []
+
+    def test_deploy_errors_clearly_when_config_is_for_a_different_provider(
+        self, isolated_paths: Path, fake_collaborators: dict
+    ) -> None:
+        aws_ec2_cli.AWS_EC2_CONFIG_FILE.write_text(
+            '{"provider": "aws-lightsail", "domain": "old.com", '
+            '"extra_port_range": null, "aws_lightsail": {"region": "us-east-1"}}'
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
+
+        assert result.exit_code != 0
+        assert "aws-lightsail" in result.output
+        assert "aws-ec2 config" in result.output
 
     def test_deploy_uses_saved_config_with_no_flags(
         self, isolated_paths: Path, fake_collaborators: dict

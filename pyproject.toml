@@ -1,7 +1,7 @@
 [project]
 name = "wildtunnel"
 version = "0.1.0"
-description = "Expose a local service to the internet at a wildcard subdomain, tunneled through a VPS running frps. Ships with an AWS EC2 provider."
+description = "Expose a local service to the internet at a wildcard subdomain, tunneled through a VPS running frps. Ships with AWS EC2 and AWS Lightsail providers."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -55,5 +55,10 @@ disallow_any_generics = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["wildtunnel.cli", "wildtunnel.providers.aws_ec2.cli", "wildtunnel.frpc_cli"]
+module = [
+    "wildtunnel.cli",
+    "wildtunnel.providers.aws_ec2.cli",
+    "wildtunnel.providers.aws_lightsail.cli",
+    "wildtunnel.frpc_cli",
+]
 implicit_reexport = true

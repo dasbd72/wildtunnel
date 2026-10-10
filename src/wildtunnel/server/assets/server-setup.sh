@@ -9,6 +9,18 @@ set -euxo pipefail
 : "${FRP_VHOST_HTTP_PORT:?FRP_VHOST_HTTP_PORT is required}"
 ALLOW_PORTS="${ALLOW_PORTS:-}"
 
+# Provider-agnostic: this box may be ARM (EC2 Graviton) or x86_64
+# (Lightsail has no ARM bundles), so the frp/caddy release asset arch
+# is detected at boot rather than assumed.
+case "$(uname -m)" in
+  aarch64) ARCH=arm64 ;;
+  x86_64) ARCH=amd64 ;;
+  *)
+    echo "unsupported CPU architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
 # t4g.nano has 0.5 GiB RAM and no swap by default, which isn't enough for
 # dnf/pip transactions on a fresh box (dnf gets OOM-killed without this).
 fallocate -l 1G /swapfile
@@ -21,7 +33,7 @@ dnf install -y tar gzip
 
 # --- frps ---
 curl -fsSL -o /tmp/frp.tar.gz \
-  "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_arm64.tar.gz"
+  "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_${ARCH}.tar.gz"
 mkdir -p /opt/frp
 tar -xzf /tmp/frp.tar.gz -C /opt/frp --strip-components=1
 rm -f /tmp/frp.tar.gz
@@ -56,7 +68,7 @@ systemctl enable --now frps
 
 # --- caddy (reverse proxy + TLS termination) ---
 curl -fsSL -o /tmp/caddy.tar.gz \
-  "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_arm64.tar.gz"
+  "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
 tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy
 chmod +x /usr/local/bin/caddy
 rm -f /tmp/caddy.tar.gz

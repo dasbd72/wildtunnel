@@ -12,9 +12,9 @@ from botocore.exceptions import ClientError
 
 from ... import token as token_module
 from ...frpc_config import DEFAULT_SERVER_PORT
-from ...paths import AWS_EC2_CACHE_DIR, AWS_EC2_CONFIG_FILE
+from ...paths import AWS_EC2_CACHE_DIR, AWS_EC2_CONFIG_FILE, other_provider
 from ...prompts import confirm_overwrite
-from .config import FRP_TOKEN_PARAM, STACK_NAME, AwsEc2Config, describe_stack
+from .config import FRP_TOKEN_PARAM, PROVIDER, STACK_NAME, AwsEc2Config, describe_stack
 
 
 def _require_cdk() -> str:
@@ -45,6 +45,12 @@ def _load_config() -> AwsEc2Config:
     try:
         return AwsEc2Config.load(AWS_EC2_CONFIG_FILE)
     except KeyError as exc:
+        other = other_provider(AWS_EC2_CONFIG_FILE, PROVIDER)
+        if other is not None:
+            raise click.ClickException(
+                f"config file is currently set up for {other!r}; "
+                "run `wildtunnel aws-ec2 config` to switch to this provider"
+            ) from exc
         raise click.ClickException(
             "config file is missing or malformed; run `wildtunnel aws-ec2 config` again"
         ) from exc
@@ -156,7 +162,14 @@ def config(
         extra_port_range=port_range,
     )
 
-    if AWS_EC2_CONFIG_FILE.exists():
+    # aws-ec2 and aws-lightsail share one config.json (see paths.py); if
+    # it currently belongs to a different provider there's nothing of
+    # this provider's shape to compare against, so switch over silently
+    # instead of crashing trying to load it as our own.
+    if (
+        AWS_EC2_CONFIG_FILE.exists()
+        and other_provider(AWS_EC2_CONFIG_FILE, PROVIDER) is None
+    ):
         confirm_overwrite(AwsEc2Config.load(AWS_EC2_CONFIG_FILE), new_config, yes=yes)
 
     new_config.save(AWS_EC2_CONFIG_FILE)

@@ -36,3 +36,13 @@ def test_has_no_textual_placeholders() -> None:
     # The generic installer takes its inputs as env vars, not
     # synth-time string substitution — no leftover __PLACEHOLDER__ tokens.
     assert "__" not in _SCRIPT
+
+
+def test_detects_cpu_architecture_instead_of_hardcoding_it() -> None:
+    # This box may be ARM (EC2 Graviton) or x86_64 (Lightsail has no ARM
+    # bundles) — the frp/caddy release asset arch must be detected at
+    # boot, never hardcoded to one architecture.
+    assert "uname -m" in _SCRIPT
+    assert "linux_arm64" not in _SCRIPT
+    assert "linux_amd64" not in _SCRIPT
+    assert "linux_${ARCH}" in _SCRIPT
