@@ -93,8 +93,8 @@ def _write_frpc_toml(config: FrpcConfig, services: dict[str, Service]) -> None:
     FRPC_TOML_FILE.chmod(0o600)
 
 
-def _systemctl(*args: str) -> None:
-    subprocess.run(["systemctl", "--user", *args], check=True)
+def _systemctl(*args: str, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(["systemctl", "--user", *args], check=check)
 
 
 def _load_config() -> FrpcConfig:
@@ -279,4 +279,8 @@ def list_services() -> None:
 @frpc.command()
 def status() -> None:
     """Show frpc service status."""
-    _systemctl("status", "frpc.service")
+    # `systemctl status` exits non-zero whenever the unit isn't active
+    # (e.g. restarting, stopped, failed) - that's its normal reporting
+    # mechanism, not a failure of this command, so don't raise on it.
+    result = _systemctl("status", "frpc.service", check=False)
+    raise SystemExit(result.returncode)

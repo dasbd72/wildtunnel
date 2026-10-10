@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -572,3 +573,22 @@ def test_status_invokes_systemctl_status(
     assert ["systemctl", "--user", "status", "frpc.service"] in fake_collaborators[
         "subprocess_calls"
     ]
+
+
+def test_status_reports_non_active_unit_without_crashing(
+    isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(frpc_cli.shutil, "which", lambda _name: "/usr/bin/frpc")
+
+    def fake_run(args, **kwargs):
+        assert kwargs.get("check") is False
+        return subprocess.CompletedProcess(args, returncode=3)
+
+    monkeypatch.setattr(frpc_cli.subprocess, "run", fake_run)
+    runner = CliRunner()
+
+    result = runner.invoke(cli.main, ["frpc", "status"])
+
+    assert result.exit_code == 3
+    assert "Traceback" not in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
