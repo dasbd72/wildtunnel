@@ -212,6 +212,17 @@ def test_user_data_wrapper_exports_full_env_var_contract() -> None:
         assert f"export {var}=" in user_data, f"missing export of {var}"
 
 
+def test_user_data_wrapper_retries_ssm_token_fetch() -> None:
+    template = _build_template()
+
+    user_data = _user_data(template)
+    # The token fetch races the instance role's credentials becoming
+    # available via IMDS at early boot; a single failed attempt must not
+    # abort provisioning (see tunnel_stack.py's TunnelInstanceV3 comment).
+    assert "for _attempt in" in user_data
+    assert "TOKEN_RETRY_INTERVAL_SECS" in user_data
+
+
 def test_user_data_wrapper_invokes_generic_installer_script() -> None:
     template = _build_template()
 
