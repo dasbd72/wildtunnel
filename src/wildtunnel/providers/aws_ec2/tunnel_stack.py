@@ -179,7 +179,7 @@ class TunnelStack(Stack):
         # also doesn't re-run cloud-init). When a boot script needs to be
         # re-run on a fresh instance, bump this logical ID to force a real
         # replacement instead of updating an instance that no longer exists.
-        instance.instance.override_logical_id("TunnelInstanceV3")
+        instance.instance.override_logical_id("TunnelInstanceV4")
         # frps reads the token param at boot; make sure it exists first.
         instance.node.add_dependency(token_param)
 
