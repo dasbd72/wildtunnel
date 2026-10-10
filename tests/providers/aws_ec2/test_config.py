@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aws_reverse_tunnel.providers.aws_ec2.config import AwsEc2Config
+from wildtunnel.providers.aws_ec2.config import AwsEc2Config
 
 
 def test_round_trips_through_json(tmp_path: Path) -> None:

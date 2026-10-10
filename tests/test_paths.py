@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aws_reverse_tunnel.paths import _xdg_dir
+from wildtunnel.paths import _xdg_dir
 
 
 def test_uses_env_var_when_set(monkeypatch: pytest.MonkeyPatch) -> None:

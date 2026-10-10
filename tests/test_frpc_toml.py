@@ -1,8 +1,8 @@
 import pytest
 
-from aws_reverse_tunnel.frpc_config import FrpcConfig
-from aws_reverse_tunnel.frpc_toml import parse_target, render
-from aws_reverse_tunnel.services import Service
+from wildtunnel.frpc_config import FrpcConfig
+from wildtunnel.frpc_toml import parse_target, render
+from wildtunnel.services import Service
 
 
 class TestParseTarget:

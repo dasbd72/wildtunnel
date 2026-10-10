@@ -3,9 +3,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from aws_reverse_tunnel import cli, frpc_cli
-from aws_reverse_tunnel.frpc_config import FrpcConfig
-from aws_reverse_tunnel.services import Service, load_services
+from wildtunnel import cli, frpc_cli
+from wildtunnel.frpc_config import FrpcConfig
+from wildtunnel.services import Service, load_services
 
 
 @pytest.fixture(autouse=True)
@@ -405,7 +405,7 @@ def test_add_requires_prior_config(isolated_paths: Path) -> None:
     result = runner.invoke(cli.main, ["frpc", "add", "openwebui", "192.168.50.10:8080"])
 
     assert result.exit_code != 0
-    assert "aws-reverse-tunnel frpc config" in result.output
+    assert "wildtunnel frpc config" in result.output
 
 
 def test_add_registers_service_and_restarts(

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aws_reverse_tunnel.services import Service, load_services, save_services
+from wildtunnel.services import Service, load_services, save_services
 
 
 def test_load_returns_empty_dict_when_file_missing(tmp_path: Path) -> None:

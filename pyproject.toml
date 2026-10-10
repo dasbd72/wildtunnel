@@ -1,7 +1,7 @@
 [project]
-name = "aws-reverse-tunnel"
+name = "wildtunnel"
 version = "0.1.0"
-description = "Expose a local service to the internet at a wildcard subdomain, tunneled through an AWS EC2 instance running frps."
+description = "Expose a local service to the internet at a wildcard subdomain, tunneled through a VPS running frps. Ships with an AWS EC2 provider."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -15,14 +15,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-infra = [
+aws-ec2 = [
     "aws-cdk-cli>=2.1143.0",
     "aws-cdk-lib>=2.160",
     "constructs>=10.3",
 ]
 
 [project.scripts]
-aws-reverse-tunnel = "aws_reverse_tunnel:main"
+wildtunnel = "wildtunnel:main"
 
 [dependency-groups]
 dev = [
@@ -38,7 +38,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/aws_reverse_tunnel"]
+packages = ["src/wildtunnel"]
 
 [tool.mypy]
 files = ["src", "tests"]
@@ -55,5 +55,5 @@ disallow_any_generics = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["aws_reverse_tunnel.cli", "aws_reverse_tunnel.providers.aws_ec2.cli", "aws_reverse_tunnel.frpc_cli"]
+module = ["wildtunnel.cli", "wildtunnel.providers.aws_ec2.cli", "wildtunnel.frpc_cli"]
 implicit_reexport = true

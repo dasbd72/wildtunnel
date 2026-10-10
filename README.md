@@ -1,10 +1,15 @@
-# AWS Reverse Tunnel
+# Wildtunnel
 
 This tool makes a home-network service available at `<name>.<domain>`. It does not open an inbound port at home.
 
 ```
-Browser -> DNS (Cloudflare) -> EC2 (Caddy + frps) -> tunnel -> home PC (frpc) -> your app
+Browser -> DNS (Cloudflare) -> VPS (Caddy + frps) -> tunnel -> home PC (frpc) -> your app
 ```
+
+Wildtunnel puts the tunnel server on a VPS. Today AWS EC2 is the only provider that this
+tool supports. The code separates the generic box setup (frps + Caddy) from the
+AWS-specific deploy logic, so the project can add another provider later without a
+rewrite.
 
 ## Setup and Usage
 
@@ -13,36 +18,36 @@ Browser -> DNS (Cloudflare) -> EC2 (Caddy + frps) -> tunnel -> home PC (frpc) ->
 ```sh
 # On a different machine, install frpc first:
 # https://github.com/fatedier/frp/releases
-uv tool install 'aws-reverse-tunnel[infra]'
+uv tool install 'wildtunnel[aws-ec2]'
 ```
 
-**2. Deploy the AWS stack**
+**2. Deploy the AWS EC2 stack**
 
-The AWS stack contains an EC2 host, frps, Caddy, an Elastic IP, and an IAM role.
+The stack contains an EC2 host, frps, Caddy, an Elastic IP, and an IAM role.
 
 ```sh
-aws-reverse-tunnel infra config --domain dasbd72.com   # The command reads the region.
-aws-reverse-tunnel infra deploy
+wildtunnel aws-ec2 config --domain dasbd72.com   # The command reads the region.
+wildtunnel aws-ec2 deploy
 ```
 
-- `infra config`
+- `aws-ec2 config`
   - `--domain` is the base domain for the tunnel subdomains, for example `dasbd72.com`.
   - `--region` is the AWS region for the stack. The command reads the region from the
     AWS CLI configuration if you do not give it.
   - `--extra-port-range START-END` opens a TCP and UDP port range on the EC2 host and in
     frps. Set this range before you use `frpc add --proto tcp --remote-port` or
     `frpc add --proto udp --remote-port`. The command does not open the range if you do
-    not give this option. You must run `infra deploy` to apply the change.
+    not give this option. You must run `aws-ec2 deploy` to apply the change.
   - `--yes` skips the confirmation prompts.
 
-Record the `ElasticIp` output. You can also run `aws-reverse-tunnel infra status` at any time.
+Record the `ElasticIp` output. You can also run `wildtunnel aws-ec2 status` at any time.
 
-Run `aws-reverse-tunnel infra info` to read the values that the frpc client
+Run `wildtunnel aws-ec2 info` to read the values that the frpc client
 needs. The command prints the server address, the base domain, and the token.
 It also prints a ready `frpc config` command.
 
 ```sh
-aws-reverse-tunnel infra info
+wildtunnel aws-ec2 info
 ```
 
 **2b. Point the DNS at the Elastic IP.** An external provider controls the DNS,
@@ -55,20 +60,20 @@ each host on demand with Let's Encrypt HTTP-01.
 **3.1. Configure the tunnel client and make a service available:**
 
 The frpc client does not read the AWS stack. You must give the data from
-`aws-reverse-tunnel infra info`. Copy the values, or copy the command from the
+`wildtunnel aws-ec2 info`. Copy the values, or copy the command from the
 output.
 
 ```sh
-aws-reverse-tunnel frpc config \
+wildtunnel frpc config \
   --server-addr 1.2.3.4 \
   --base-domain dasbd72.com \
   --token <token>
-aws-reverse-tunnel frpc add openwebui 192.168.50.10:8080
+wildtunnel frpc add openwebui 192.168.50.10:8080
 # -> https://openwebui.dasbd72.com
 ```
 
 - `frpc config`
-  - `--server-addr` is the public IP address of the EC2 host. This value is required.
+  - `--server-addr` is the public IP address of the VPS host. This value is required.
   - `--base-domain` is the base domain for the tunnel subdomains. This value is required.
   - `--token` is the frp authentication token. This value is required.
 - `frpc add <name> <local-ip>:<local-port>` adds a tunnel for a local service.
@@ -77,7 +82,7 @@ aws-reverse-tunnel frpc add openwebui 192.168.50.10:8080
   - For a service that is not HTTP, for example WireGuard, give `--proto tcp` or
     `--proto udp` with `--remote-port <port>`. This binds the port that you give on
     the frps server. For example: `frpc add wireguard 127.0.0.1:51820 --proto udp --remote-port 51820`.
-    The port must be in the range that you set with `infra config --extra-port-range`.
+    The port must be in the range that you set with `aws-ec2 config --extra-port-range`.
 - `frpc list` shows all the tunnels that you configured.
 - `frpc del <name>` removes a tunnel that you configured.
 
@@ -88,11 +93,17 @@ Give the same data as step 3.1. The `render` command writes an `frpc.toml` to
 stdout. It does not save a file and it does not start a service.
 
 ```sh
-aws-reverse-tunnel frpc render \
+wildtunnel frpc render \
   --server-addr 1.2.3.4 \
   --base-domain dasbd72.com \
   --token <token>
 ```
+
+## Upgrading from aws-reverse-tunnel
+
+This project was renamed from `aws-reverse-tunnel` to `wildtunnel`. There is no
+automatic migration. To keep your existing configuration, move the old config
+directory by hand: `mv ~/.config/aws-reverse-tunnel ~/.config/wildtunnel`.
 
 ## Cost
 
@@ -131,9 +142,15 @@ uv run pre-commit run --all-files
 ```
 
 **Layout:**
-- `src/aws_reverse_tunnel/` is the CLI. It includes `infra/`, which is the CDK
-  stack. The package contains the stack. Thus `infra deploy` operates without a
-  clone of this repository.
+- `src/wildtunnel/` is the CLI and the generic box installer
+  (`server/assets/server-setup.sh`). The installer takes its input from
+  environment variables and makes no AWS API calls, so it also runs by hand
+  on any Linux VPS.
+- `src/wildtunnel/providers/aws_ec2/` holds all AWS-EC2-specific code: the CDK
+  stack, the CDK app entry point, the SSM token helpers, and the `aws-ec2`
+  CLI group. The package contains the stack, so `aws-ec2 deploy` operates
+  without a clone of this repository. A future provider would get its own
+  sibling directory here, for example `providers/aws_lightsail/`.
 
 **Known limitation:** The CDK application code makes the frp authentication
 token. Thus the plaintext token goes into the synthesized CloudFormation

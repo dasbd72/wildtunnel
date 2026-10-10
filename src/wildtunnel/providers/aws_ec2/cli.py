@@ -21,8 +21,8 @@ def _require_cdk() -> str:
     cdk = shutil.which("cdk")
     if cdk is None:
         raise click.ClickException(
-            "cdk not found on PATH. Install the infra extra — e.g. "
-            "`uv tool install 'aws-reverse-tunnel[infra]'` — then re-run this command."
+            "cdk not found on PATH. Install the aws-ec2 extra — e.g. "
+            "`uv tool install 'wildtunnel[aws-ec2]'` — then re-run this command."
         )
     return cdk
 
@@ -32,22 +32,21 @@ def _require_aws_cdk_lib() -> None:
         importlib.import_module("aws_cdk")
     except ImportError as exc:
         raise click.ClickException(
-            "aws-cdk-lib is not installed. Install the infra extra — e.g. "
-            "`uv tool install 'aws-reverse-tunnel[infra]'` — then re-run this command."
+            "aws-cdk-lib is not installed. Install the aws-ec2 extra — e.g. "
+            "`uv tool install 'wildtunnel[aws-ec2]'` — then re-run this command."
         ) from exc
 
 
 def _load_config() -> AwsEc2Config:
     if not AWS_EC2_CONFIG_FILE.exists():
         raise click.ClickException(
-            "not configured; run `aws-reverse-tunnel aws-ec2 config` first"
+            "not configured; run `wildtunnel aws-ec2 config` first"
         )
     try:
         return AwsEc2Config.load(AWS_EC2_CONFIG_FILE)
     except KeyError as exc:
         raise click.ClickException(
-            "config file is missing or malformed; run "
-            "`aws-reverse-tunnel aws-ec2 config` again"
+            "config file is missing or malformed; run `wildtunnel aws-ec2 config` again"
         ) from exc
 
 
@@ -78,7 +77,7 @@ def _run_cdk(subcommand: str, aws_ec2_config: AwsEc2Config) -> None:
             [
                 cdk,
                 "-a",
-                f"{sys.executable} -m aws_reverse_tunnel.providers.aws_ec2.app",
+                f"{sys.executable} -m wildtunnel.providers.aws_ec2.app",
                 *context_args,
                 subcommand,
             ],
@@ -188,7 +187,7 @@ def _describe_deployed_stack(region: str) -> dict[str, Any]:
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ValidationError":
             raise click.ClickException(
-                f"stack {STACK_NAME!r} not found; run `aws-reverse-tunnel aws-ec2 deploy` first"
+                f"stack {STACK_NAME!r} not found; run `wildtunnel aws-ec2 deploy` first"
             ) from exc
         raise click.ClickException(
             f"could not look up the deployed stack: {exc}"
@@ -228,7 +227,7 @@ def info() -> None:
     if server_addr is None:
         raise click.ClickException(
             f"stack {STACK_NAME!r} has no ElasticIp output; "
-            "re-run `aws-reverse-tunnel aws-ec2 deploy`"
+            "re-run `wildtunnel aws-ec2 deploy`"
         )
     try:
         token = token_module.fetch_token(FRP_TOKEN_PARAM, aws_ec2_config.region)
@@ -244,7 +243,7 @@ def info() -> None:
     click.echo("")
     click.echo("Run this on the frpc machine:")
     click.echo(
-        f"  aws-reverse-tunnel frpc config \\\n"
+        f"  wildtunnel frpc config \\\n"
         f"    --server-addr {server_addr} \\\n"
         f"    --base-domain {aws_ec2_config.domain} \\\n"
         f"    --token {token}"

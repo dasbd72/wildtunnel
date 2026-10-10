@@ -1,6 +1,6 @@
 from click.testing import CliRunner
 
-from aws_reverse_tunnel import cli
+from wildtunnel import cli
 
 
 def test_main_wires_up_aws_ec2_and_frpc_subgroups() -> None:

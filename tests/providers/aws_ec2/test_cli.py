@@ -5,8 +5,8 @@ import pytest
 from botocore.exceptions import ClientError
 from click.testing import CliRunner
 
-from aws_reverse_tunnel.providers.aws_ec2 import cli as aws_ec2_cli
-from aws_reverse_tunnel.providers.aws_ec2.config import AwsEc2Config
+from wildtunnel.providers.aws_ec2 import cli as aws_ec2_cli
+from wildtunnel.providers.aws_ec2.config import AwsEc2Config
 
 
 @pytest.fixture(autouse=True)
@@ -248,10 +248,7 @@ class TestDeployDestroyDiff:
         call = fake_collaborators["subprocess_calls"][0]
         assert call["cwd"] == aws_ec2_cli.AWS_EC2_CACHE_DIR
         assert call["args"][0] == "/usr/bin/cdk"
-        assert (
-            f"{sys.executable} -m aws_reverse_tunnel.providers.aws_ec2.app"
-            in call["args"]
-        )
+        assert f"{sys.executable} -m wildtunnel.providers.aws_ec2.app" in call["args"]
         assert "domain=dasbd72.com" in call["args"]
         assert "region=ap-northeast-1" in call["args"]
         assert call["args"][-1] == "deploy"
@@ -465,7 +462,7 @@ class TestInfo:
         assert "base-domain:  dasbd72.com" in result.output
         assert "s3cret" in result.output
         # A copy-pasteable frpc config command.
-        assert "aws-reverse-tunnel frpc config" in result.output
+        assert "wildtunnel frpc config" in result.output
         assert "--server-addr 1.2.3.4" in result.output
         assert "--token s3cret" in result.output
 

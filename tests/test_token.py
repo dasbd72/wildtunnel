@@ -1,7 +1,7 @@
 import boto3
 from moto import mock_aws
 
-from aws_reverse_tunnel.token import fetch_token
+from wildtunnel.token import fetch_token
 
 
 @mock_aws

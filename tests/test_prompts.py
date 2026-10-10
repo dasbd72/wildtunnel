@@ -1,7 +1,7 @@
 import click
 import pytest
 
-from aws_reverse_tunnel.prompts import confirm_overwrite
+from wildtunnel.prompts import confirm_overwrite
 
 
 def test_no_prompt_when_yes_flag_set(monkeypatch: pytest.MonkeyPatch) -> None:

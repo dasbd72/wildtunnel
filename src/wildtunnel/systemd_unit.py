@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 _TEMPLATE = """[Unit]
-Description=aws-reverse-tunnel frpc client
+Description=wildtunnel frpc client
 After=network-online.target
 Wants=network-online.target
 

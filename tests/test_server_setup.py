@@ -3,7 +3,7 @@ from pathlib import Path
 _SCRIPT = (
     Path(__file__).parent.parent
     / "src"
-    / "aws_reverse_tunnel"
+    / "wildtunnel"
     / "server"
     / "assets"
     / "server-setup.sh"

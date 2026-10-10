@@ -86,7 +86,7 @@ class TunnelStack(Stack):
             self,
             "TunnelSecurityGroup",
             vpc=vpc,
-            description="aws-reverse-tunnel EC2 host",
+            description="wildtunnel EC2 host",
             allow_all_outbound=True,
         )
         security_group.add_ingress_rule(

@@ -4,7 +4,7 @@ from aws_cdk import App, Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk.assertions import Match, Template
 
-from aws_reverse_tunnel.providers.aws_ec2.tunnel_stack import TunnelStack
+from wildtunnel.providers.aws_ec2.tunnel_stack import TunnelStack
 
 
 def _build_template(**kwargs: Any) -> Template:

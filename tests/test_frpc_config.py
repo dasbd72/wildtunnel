@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from aws_reverse_tunnel.frpc_config import FrpcConfig
+from wildtunnel.frpc_config import FrpcConfig
 
 
 def test_round_trips_through_json(tmp_path: Path) -> None:
