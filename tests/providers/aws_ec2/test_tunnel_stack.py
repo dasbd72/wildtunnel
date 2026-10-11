@@ -22,7 +22,7 @@ def _build_template(**kwargs: Any) -> Template:
         app,
         "TunnelStack",
         vpc=vpc,
-        domain_name="dasbd72.com",
+        domain_name="example.com",
         frp_token="test-token",
         **kwargs,
     )

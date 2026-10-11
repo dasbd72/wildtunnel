@@ -45,7 +45,7 @@ def _config_args() -> list[str]:
         "--server-addr",
         "1.2.3.4",
         "--base-domain",
-        "dasbd72.com",
+        "example.com",
         "--token",
         "fake-token",
     ]
@@ -58,7 +58,7 @@ def _render_args() -> list[str]:
         "--server-addr",
         "1.2.3.4",
         "--base-domain",
-        "dasbd72.com",
+        "example.com",
         "--token",
         "fake-token",
     ]
@@ -75,7 +75,7 @@ class TestConfigCommand:
         assert result.exit_code == 0, result.output
         config = FrpcConfig.load(frpc_cli.FRPC_CONFIG_FILE)
         assert config.server_addr == "1.2.3.4"
-        assert config.base_domain == "dasbd72.com"
+        assert config.base_domain == "example.com"
         assert config.token == "fake-token"
         assert frpc_cli.FRPC_TOML_FILE.exists()
         assert "fake-token" in frpc_cli.FRPC_TOML_FILE.read_text()
@@ -202,7 +202,7 @@ class TestConfigCommand:
                 "--server-addr",
                 "9.9.9.9",
                 "--base-domain",
-                "dasbd72.com",
+                "example.com",
                 "--token",
                 "fake-token",
             ],
@@ -226,7 +226,7 @@ class TestConfigCommand:
                 "--server-addr",
                 "9.9.9.9",
                 "--base-domain",
-                "dasbd72.com",
+                "example.com",
                 "--token",
                 "fake-token",
             ],
@@ -250,7 +250,7 @@ class TestConfigCommand:
                 "--server-addr",
                 "9.9.9.9",
                 "--base-domain",
-                "dasbd72.com",
+                "example.com",
                 "--token",
                 "fake-token",
                 "--yes",
@@ -285,7 +285,7 @@ class TestRenderCommand:
                 "--server-addr",
                 "1.2.3.4",
                 "--base-domain",
-                "dasbd72.com",
+                "example.com",
                 "--token",
                 "explicit-token",
             ],
@@ -321,7 +321,7 @@ class TestRenderCommand:
                 "--server-addr",
                 "1.2.3.4",
                 "--base-domain",
-                "dasbd72.com",
+                "example.com",
             ],
         )
 
@@ -340,7 +340,7 @@ class TestRenderCommand:
 
         assert result.exit_code == 0, result.output
         assert 'name = "openwebui"' in result.output
-        assert 'customDomains = ["openwebui.dasbd72.com"]' in result.output
+        assert 'customDomains = ["openwebui.example.com"]' in result.output
 
     def test_renders_udp_proxy_from_extended_service_flag(
         self, isolated_paths: Path, fake_collaborators: dict
@@ -422,7 +422,7 @@ def test_add_registers_service_and_restarts(
         "openwebui": Service(target="192.168.50.10:8080")
     }
     assert (
-        'customDomains = ["openwebui.dasbd72.com"]'
+        'customDomains = ["openwebui.example.com"]'
         in frpc_cli.FRPC_TOML_FILE.read_text()
     )
     assert ["systemctl", "--user", "restart", "frpc.service"] in fake_collaborators[
@@ -599,7 +599,7 @@ def test_list_shows_configured_services(
 
     result = runner.invoke(cli.main, ["frpc", "list"])
 
-    assert "openwebui.dasbd72.com -> 192.168.50.10:8080" in result.output
+    assert "openwebui.example.com -> 192.168.50.10:8080" in result.output
 
 
 def test_list_shows_remote_port_for_non_http_services(

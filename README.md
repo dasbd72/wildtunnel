@@ -44,13 +44,13 @@ Pick one provider.
 Creates an EC2 host, frps, Caddy, an Elastic IP, and an IAM role, via CDK.
 
 ```sh
-wildtunnel aws-ec2 config --domain dasbd72.com   # reads the region from your AWS CLI config
+wildtunnel aws-ec2 config --domain example.com   # reads the region from your AWS CLI config
 wildtunnel aws-ec2 deploy
 ```
 
 Options for `aws-ec2 config`:
 
-- `--domain`: base domain for the tunnel subdomains, e.g. `dasbd72.com`.
+- `--domain`: base domain for the tunnel subdomains, e.g. `example.com`.
 - `--region`: AWS region for the stack. Defaults to your AWS CLI region.
 - `--extra-port-range START-END`: opens a TCP+UDP port range on the EC2 host and in frps, for `frpc add --proto tcp|udp --remote-port`. Not opened unless given. Run `aws-ec2 deploy` again to apply a change.
 - `--yes`: skips confirmation prompts.
@@ -68,7 +68,7 @@ wildtunnel aws-ec2 info
 Creates a `nano_3_0` Lightsail instance, frps, Caddy, and a static IP, via direct Lightsail API calls. No CDK, no CloudFormation.
 
 ```sh
-wildtunnel aws-lightsail config --domain dasbd72.com   # reads the region from your AWS CLI config
+wildtunnel aws-lightsail config --domain example.com   # reads the region from your AWS CLI config
 wildtunnel aws-lightsail deploy
 ```
 
@@ -86,7 +86,7 @@ Re-running `deploy` on a live instance only syncs the static IP and firewall rul
 
 Get the server address: the `ElasticIp` from `aws-ec2 info`, or the static IP from `aws-lightsail info`.
 
-At your DNS provider (for example Cloudflare), add a wildcard `A` record, `*.dasbd72.com`, pointed at that address. Keep it DNS-only — do not enable the Cloudflare proxy (grey cloud, not orange). Make sure port 80 is open: Caddy needs it to get a TLS certificate per host on demand, via Let's Encrypt HTTP-01.
+At your DNS provider (for example Cloudflare), add a wildcard `A` record, `*.example.com`, pointed at that address. Keep it DNS-only — do not enable the Cloudflare proxy (grey cloud, not orange). Make sure port 80 is open: Caddy needs it to get a TLS certificate per host on demand, via Let's Encrypt HTTP-01.
 
 ### Step 4: Configure the frpc client
 
@@ -97,10 +97,10 @@ frpc does not read the deployed server automatically. Copy the values, or the re
 ```sh
 wildtunnel frpc config \
   --server-addr 1.2.3.4 \
-  --base-domain dasbd72.com \
+  --base-domain example.com \
   --token <token>
 wildtunnel frpc add openwebui 192.168.50.10:8080
-# -> https://openwebui.dasbd72.com
+# -> https://openwebui.example.com
 ```
 
 `frpc config` options `--server-addr`, `--base-domain`, and `--token` are all required.
@@ -120,7 +120,7 @@ Use the same data as step 4.1. The `render` command writes an `frpc.toml` to std
 ```sh
 wildtunnel frpc render \
   --server-addr 1.2.3.4 \
-  --base-domain dasbd72.com \
+  --base-domain example.com \
   --token <token>
 ```
 

@@ -10,7 +10,7 @@ from wildtunnel.providers.aws_lightsail.config import (
 
 
 def test_round_trips_through_json(tmp_path: Path) -> None:
-    config = AwsLightsailConfig(domain="dasbd72.com", region="ap-northeast-1")
+    config = AwsLightsailConfig(domain="example.com", region="ap-northeast-1")
     path = tmp_path / "nested" / "config.json"
 
     config.save(path)
@@ -22,13 +22,13 @@ def test_round_trips_through_json(tmp_path: Path) -> None:
 def test_loads_file_missing_extra_port_range_key(tmp_path: Path) -> None:
     path = tmp_path / "config.json"
     path.write_text(
-        '{"provider": "aws-lightsail", "domain": "dasbd72.com", '
+        '{"provider": "aws-lightsail", "domain": "example.com", '
         '"aws_lightsail": {"region": "ap-northeast-1"}}'
     )
 
     loaded = AwsLightsailConfig.load(path)
 
-    assert loaded == AwsLightsailConfig(domain="dasbd72.com", region="ap-northeast-1")
+    assert loaded == AwsLightsailConfig(domain="example.com", region="ap-northeast-1")
 
 
 def test_port_infos_without_extra_range_opens_only_http_https_and_frp() -> None:
@@ -74,7 +74,7 @@ def test_port_infos_with_extra_range_opens_tcp_and_udp_for_that_range() -> None:
 
 def test_render_user_data_embeds_token_domain_and_server_setup_script() -> None:
     script = render_user_data(
-        domain="dasbd72.com",
+        domain="example.com",
         frp_token="s3cret-token",
         frp_bind_port=7000,
         frp_vhost_http_port=7080,
@@ -83,7 +83,7 @@ def test_render_user_data_embeds_token_domain_and_server_setup_script() -> None:
         extra_port_range=None,
     )
 
-    assert 'DOMAIN="dasbd72.com"' in script
+    assert 'DOMAIN="example.com"' in script
     assert 'FRP_TOKEN="s3cret-token"' in script
     assert 'FRP_BIND_PORT="7000"' in script
     assert 'FRP_VHOST_HTTP_PORT="7080"' in script
@@ -94,7 +94,7 @@ def test_render_user_data_embeds_token_domain_and_server_setup_script() -> None:
 
 def test_render_user_data_sets_allow_ports_when_extra_range_given() -> None:
     script = render_user_data(
-        domain="dasbd72.com",
+        domain="example.com",
         frp_token="s3cret-token",
         frp_bind_port=7000,
         frp_vhost_http_port=7080,

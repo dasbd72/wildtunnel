@@ -20,7 +20,7 @@ class TestParseTarget:
 def test_renders_server_and_auth_settings() -> None:
     config = FrpcConfig(
         server_addr="1.2.3.4",
-        base_domain="dasbd72.com",
+        base_domain="example.com",
         token="secret-token",
         server_port=7000,
     )
@@ -34,7 +34,7 @@ def test_renders_server_and_auth_settings() -> None:
 
 def test_renders_one_proxy_block_per_service() -> None:
     config = FrpcConfig(
-        server_addr="1.2.3.4", base_domain="dasbd72.com", token="secret-token"
+        server_addr="1.2.3.4", base_domain="example.com", token="secret-token"
     )
     services = {"openwebui": Service(target="192.168.50.10:8080")}
 
@@ -45,12 +45,12 @@ def test_renders_one_proxy_block_per_service() -> None:
     assert 'type = "http"' in output
     assert 'localIP = "192.168.50.10"' in output
     assert "localPort = 8080" in output
-    assert 'customDomains = ["openwebui.dasbd72.com"]' in output
+    assert 'customDomains = ["openwebui.example.com"]' in output
 
 
 def test_renders_no_proxy_blocks_when_no_services() -> None:
     config = FrpcConfig(
-        server_addr="1.2.3.4", base_domain="dasbd72.com", token="secret-token"
+        server_addr="1.2.3.4", base_domain="example.com", token="secret-token"
     )
 
     output = render(config, {})
@@ -60,7 +60,7 @@ def test_renders_no_proxy_blocks_when_no_services() -> None:
 
 def test_renders_services_in_sorted_order_for_determinism() -> None:
     config = FrpcConfig(
-        server_addr="1.2.3.4", base_domain="dasbd72.com", token="secret-token"
+        server_addr="1.2.3.4", base_domain="example.com", token="secret-token"
     )
     services = {
         "zeta": Service(target="10.0.0.1:1"),
@@ -75,7 +75,7 @@ def test_renders_services_in_sorted_order_for_determinism() -> None:
 @pytest.mark.parametrize("proto", ["tcp", "udp"])
 def test_renders_tcp_udp_proxy_with_remote_port(proto: str) -> None:
     config = FrpcConfig(
-        server_addr="1.2.3.4", base_domain="dasbd72.com", token="secret-token"
+        server_addr="1.2.3.4", base_domain="example.com", token="secret-token"
     )
     services = {
         "wireguard": Service(target="127.0.0.1:51820", proto=proto, remote_port=51820)

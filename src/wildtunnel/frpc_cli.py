@@ -119,7 +119,7 @@ def _common_options(f: Callable[..., Any]) -> Callable[..., Any]:
     f = click.option(
         "--base-domain",
         required=True,
-        help="Base domain the wildcard DNS record covers, e.g. dasbd72.com. "
+        help="Base domain the wildcard DNS record covers, e.g. example.com. "
         "Read it off the deployed stack with `wildtunnel aws-ec2 info`.",
     )(f)
     f = click.option(

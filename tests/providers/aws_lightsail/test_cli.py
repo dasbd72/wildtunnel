@@ -26,7 +26,7 @@ def fake_default_region(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _seed_config(path: Path, **overrides: object) -> None:
-    defaults: dict[str, object] = {"domain": "dasbd72.com", "region": "ap-northeast-1"}
+    defaults: dict[str, object] = {"domain": "example.com", "region": "ap-northeast-1"}
     defaults.update(overrides)
     AwsLightsailConfig(**defaults).save(path)  # type: ignore[arg-type]
 
@@ -41,18 +41,18 @@ class TestConfig:
 
         result = runner.invoke(
             aws_lightsail_cli.aws_lightsail,
-            ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
+            ["config", "--domain", "example.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
         config = _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
-        assert config == AwsLightsailConfig(domain="dasbd72.com", region="us-east-1")
+        assert config == AwsLightsailConfig(domain="example.com", region="us-east-1")
 
     def test_defaults_region_from_boto3_session(self, isolated_paths: Path) -> None:
         runner = CliRunner()
 
         result = runner.invoke(
-            aws_lightsail_cli.aws_lightsail, ["config", "--domain", "dasbd72.com"]
+            aws_lightsail_cli.aws_lightsail, ["config", "--domain", "example.com"]
         )
 
         assert result.exit_code == 0, result.output
@@ -69,7 +69,7 @@ class TestConfig:
         runner = CliRunner()
 
         result = runner.invoke(
-            aws_lightsail_cli.aws_lightsail, ["config", "--domain", "dasbd72.com"]
+            aws_lightsail_cli.aws_lightsail, ["config", "--domain", "example.com"]
         )
 
         assert result.exit_code != 0
@@ -83,7 +83,7 @@ class TestConfig:
             [
                 "config",
                 "--domain",
-                "dasbd72.com",
+                "example.com",
                 "--extra-port-range",
                 "not-a-range",
             ],
@@ -430,5 +430,5 @@ class TestInfo:
 
         assert result.exit_code == 0, result.output
         assert "server-addr:  1.2.3.4" in result.output
-        assert "base-domain:  dasbd72.com" in result.output
+        assert "base-domain:  example.com" in result.output
         assert "token:        s3cret-token" in result.output

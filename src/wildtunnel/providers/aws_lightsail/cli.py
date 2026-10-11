@@ -85,7 +85,7 @@ def aws_lightsail() -> None:
 @click.option(
     "--domain",
     required=True,
-    help="Base domain for the tunnel, e.g. dasbd72.com. Point a wildcard "
+    help="Base domain for the tunnel, e.g. example.com. Point a wildcard "
     "record (*.DOMAIN) at the deployed static IP in your DNS provider.",
 )
 @click.option(

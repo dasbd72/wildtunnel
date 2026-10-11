@@ -50,18 +50,18 @@ class TestConfig:
 
         result = runner.invoke(
             aws_ec2_cli.aws_ec2,
-            ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
+            ["config", "--domain", "example.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
         config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
-        assert config == AwsEc2Config(domain="dasbd72.com", region="us-east-1")
+        assert config == AwsEc2Config(domain="example.com", region="us-east-1")
 
     def test_defaults_region_from_boto3_session(self, isolated_paths: Path) -> None:
         runner = CliRunner()
 
         result = runner.invoke(
-            aws_ec2_cli.aws_ec2, ["config", "--domain", "dasbd72.com"]
+            aws_ec2_cli.aws_ec2, ["config", "--domain", "example.com"]
         )
 
         assert result.exit_code == 0, result.output
@@ -78,7 +78,7 @@ class TestConfig:
         runner = CliRunner()
 
         result = runner.invoke(
-            aws_ec2_cli.aws_ec2, ["config", "--domain", "dasbd72.com"]
+            aws_ec2_cli.aws_ec2, ["config", "--domain", "example.com"]
         )
 
         assert result.exit_code != 0
@@ -92,7 +92,7 @@ class TestConfig:
         # must fail with a clean message, not a raw KeyError traceback.
         aws_ec2_cli.AWS_EC2_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         aws_ec2_cli.AWS_EC2_CONFIG_FILE.write_text(
-            '{"domain": "dasbd72.com", "region": "us-east-1"}'
+            '{"domain": "example.com", "region": "us-east-1"}'
         )
         runner = CliRunner()
 
@@ -175,7 +175,7 @@ class TestConfig:
             [
                 "config",
                 "--domain",
-                "dasbd72.com",
+                "example.com",
                 "--region",
                 "us-east-1",
                 "--extra-port-range",
@@ -192,7 +192,7 @@ class TestConfig:
 
         result = runner.invoke(
             aws_ec2_cli.aws_ec2,
-            ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
+            ["config", "--domain", "example.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
@@ -212,7 +212,7 @@ class TestConfig:
             [
                 "config",
                 "--domain",
-                "dasbd72.com",
+                "example.com",
                 "--region",
                 "us-east-1",
                 "--extra-port-range",
@@ -224,21 +224,21 @@ class TestConfig:
         assert "--extra-port-range" in result.output
 
     def test_no_prompt_when_values_unchanged(self, isolated_paths: Path) -> None:
-        AwsEc2Config(domain="dasbd72.com", region="us-east-1").save(
+        AwsEc2Config(domain="example.com", region="us-east-1").save(
             aws_ec2_cli.AWS_EC2_CONFIG_FILE
         )
         runner = CliRunner()
 
         result = runner.invoke(
             aws_ec2_cli.aws_ec2,
-            ["config", "--domain", "dasbd72.com", "--region", "us-east-1"],
+            ["config", "--domain", "example.com", "--region", "us-east-1"],
         )
 
         assert result.exit_code == 0, result.output
 
 
 def _seed_config(path: Path) -> AwsEc2Config:
-    config = AwsEc2Config(domain="dasbd72.com", region="ap-northeast-1")
+    config = AwsEc2Config(domain="example.com", region="ap-northeast-1")
     config.save(path)
     return config
 
@@ -283,7 +283,7 @@ class TestDeployDestroyDiff:
         assert call["cwd"] == aws_ec2_cli.AWS_EC2_CACHE_DIR
         assert call["args"][0] == "/usr/bin/cdk"
         assert f"{sys.executable} -m wildtunnel.providers.aws_ec2.app" in call["args"]
-        assert "domain=dasbd72.com" in call["args"]
+        assert "domain=example.com" in call["args"]
         assert "region=ap-northeast-1" in call["args"]
         assert call["args"][-1] == "deploy"
 
@@ -291,7 +291,7 @@ class TestDeployDestroyDiff:
         self, isolated_paths: Path, fake_collaborators: dict
     ) -> None:
         AwsEc2Config(
-            domain="dasbd72.com",
+            domain="example.com",
             region="ap-northeast-1",
             extra_port_range=(20000, 20100),
         ).save(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
@@ -493,7 +493,7 @@ class TestInfo:
 
         assert result.exit_code == 0, result.output
         assert "server-addr:  1.2.3.4" in result.output
-        assert "base-domain:  dasbd72.com" in result.output
+        assert "base-domain:  example.com" in result.output
         assert "s3cret" in result.output
         # A copy-pasteable frpc config command.
         assert "wildtunnel frpc config" in result.output
