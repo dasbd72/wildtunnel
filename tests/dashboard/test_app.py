@@ -59,6 +59,17 @@ def test_login_before_any_admin_exists_fails_with_same_generic_response() -> Non
     assert response.json() == {"detail": "invalid credentials"}
 
 
+def test_login_page_has_a_mobile_viewport_meta_tag() -> None:
+    client = _client_with_admin()
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    assert "<meta name='viewport' content='width=device-width, initial-scale=1'>" in (
+        response.text
+    )
+
+
 def test_root_rejects_unauthenticated_request() -> None:
     client = _client_with_admin()
 

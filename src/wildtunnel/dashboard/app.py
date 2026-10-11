@@ -30,19 +30,30 @@ class _MustChangePassword(Exception):
     """Raised by current_admin_with_password_set to force /change-password."""
 
 
+def _page(body: str) -> HTMLResponse:
+    """Wrap a fragment in a minimal HTML document with a mobile viewport.
+
+    Without this, mobile browsers render the bare fragment at desktop
+    width and zoom out, making every page too small to read or tap.
+    """
+    return HTMLResponse(
+        "<!doctype html><html><head>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "</head><body>" + body + "</body></html>"
+    )
+
+
 def _form(*field_names: str) -> HTMLResponse:
     """Build a bare POST form with one <input> per field name, in order."""
     inputs = "".join(f"<input name='{name}'>" for name in field_names)
-    return HTMLResponse(f"<form method='post'>{inputs}</form>")
+    return _page(f"<form method='post'>{inputs}</form>")
 
 
 _PASSWORD_FORM = _form("password")
 _EMAIL_FORM = _form("email")
 _FORGOT_PASSWORD_FORM = _form("email")
 _RESET_PASSWORD_FORM = _form("token", "password")
-_RESET_TOKEN_SENT = HTMLResponse(
-    "<p>If that email is registered, a reset link was sent.</p>"
-)
+_RESET_TOKEN_SENT = _page("<p>If that email is registered, a reset link was sent.</p>")
 
 _DEFAULT_RESET_TOKEN_TTL_SECONDS = 3600.0
 
@@ -206,7 +217,7 @@ def create_app(
     async def root(
         admin: Admin = Depends(current_admin_with_password_set),  # noqa: B008
     ) -> HTMLResponse:
-        return HTMLResponse(
+        return _page(
             "<p>dashboard</p><ul>"
             "<li><a href='/stats'>stats</a></li>"
             "<li><a href='/egress'>egress</a></li>"
@@ -235,7 +246,7 @@ def create_app(
             "<table><thead><tr><th>tunnel</th><th>connections</th>"
             f"<th>bytes in</th><th>bytes out</th></tr></thead><tbody>{rows}</tbody></table>"
         )
-        return HTMLResponse(table)
+        return _page(table)
 
     @app.get("/egress")
     async def egress_page(
@@ -251,6 +262,6 @@ def create_app(
             "<table><thead><tr><th>tunnel</th><th>day</th>"
             f"<th>week</th><th>month</th></tr></thead><tbody>{rows}</tbody></table>"
         )
-        return HTMLResponse(table)
+        return _page(table)
 
     return app
