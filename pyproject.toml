@@ -1,6 +1,6 @@
 [project]
 name = "wildtunnel"
-version = "0.2.0"
+version = "0.2.1"
 description = "Expose a local service to the internet at a wildcard subdomain, tunneled through a VPS running frps. Ships with AWS EC2 and AWS Lightsail providers."
 readme = "README.md"
 license = "MIT"
