@@ -253,4 +253,3 @@ pyrightconfig.json
 # outside the repo; these just catch stray local `cdk` invocations from here)
 cdk.out/
 cdk.context.json
-
