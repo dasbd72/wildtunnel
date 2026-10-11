@@ -1,125 +1,85 @@
 # Wildtunnel
 
-Wildtunnel makes a home-network service available at `<name>.<domain>`. Wildtunnel does not open an inbound port on your home network.
+This tool makes a home-network service available at `<name>.<domain>`. It does not open an inbound port at home.
 
 ```
 Browser -> DNS (Cloudflare) -> VPS (Caddy + frps) -> tunnel -> home PC (frpc) -> your app
 ```
 
-Wildtunnel puts the tunnel server on a VPS. Wildtunnel supports two providers: AWS EC2 and AWS Lightsail. You deploy the AWS EC2 provider with CDK. You deploy the AWS Lightsail provider with direct API calls. The AWS Lightsail provider does not need the CDK toolchain.
-
-The code separates the generic server setup (frps and Caddy) from each provider's deploy logic. This separation lets you add a new provider without a rewrite of the existing code.
+Wildtunnel puts the tunnel server on a VPS. It supports two providers: AWS EC2 (deployed via CDK) and AWS Lightsail (deployed via direct API calls, no CDK toolchain needed). The code separates the generic server setup (frps + Caddy) from each provider's deploy logic, so adding another provider needs no rewrite.
 
 ## Setup and usage
 
 ### Step 1: Install the CLI
 
-Before you install wildtunnel, install frpc on a different machine. Get frpc from [github.com/fatedier/frp/releases](https://github.com/fatedier/frp/releases).
-
-To install wildtunnel for the AWS EC2 provider, run this command:
+Install frpc on a different machine first: [github.com/fatedier/frp/releases](https://github.com/fatedier/frp/releases)
 
 ```sh
+# For the AWS EC2 provider:
 uv tool install 'wildtunnel[aws-ec2]'
-```
 
-To install wildtunnel for the AWS Lightsail provider, run this command. This provider does not need an extra, because it does not use the CDK toolchain.
-
-```sh
+# For the AWS Lightsail provider (no extra needed, no CDK toolchain):
 uv tool install wildtunnel
 ```
 
 ### Step 2: Deploy the server
 
-Select one provider: AWS EC2 or AWS Lightsail.
+Pick one provider.
 
 #### Step 2a: Deploy to AWS EC2
 
-The AWS EC2 provider creates these resources: an EC2 host, frps, Caddy, an Elastic IP address, and an IAM role. Wildtunnel deploys these resources with CDK.
-
-Run these commands to configure and deploy the stack. The `config` command reads the AWS region from your AWS CLI configuration.
+Creates an EC2 host, frps, Caddy, an Elastic IP, and an IAM role, via CDK.
 
 ```sh
-wildtunnel aws-ec2 config --domain dasbd72.com
+wildtunnel aws-ec2 config --domain dasbd72.com   # reads the region from your AWS CLI config
 wildtunnel aws-ec2 deploy
 ```
 
-Options for the `aws-ec2 config` command:
+Options for `aws-ec2 config`:
 
-- `--domain`: the base domain for the tunnel subdomains. Example: `dasbd72.com`.
-- `--region`: the AWS region for the stack. If you do not give this option, the command reads the region from your AWS CLI configuration.
-- `--extra-port-range START-END`: opens a TCP port range and a UDP port range on the EC2 host and in frps. Set this option before you use `frpc add --proto tcp --remote-port` or `frpc add --proto udp --remote-port`. If you do not give this option, the command does not open a port range. If you change this option, run `wildtunnel aws-ec2 deploy` again to apply the change.
-- `--yes`: skips the confirmation prompts.
+- `--domain`: base domain for the tunnel subdomains, e.g. `dasbd72.com`.
+- `--region`: AWS region for the stack. Defaults to your AWS CLI region.
+- `--extra-port-range START-END`: opens a TCP+UDP port range on the EC2 host and in frps, for `frpc add --proto tcp|udp --remote-port`. Not opened unless given. Run `aws-ec2 deploy` again to apply a change.
+- `--yes`: skips confirmation prompts.
 
-Record the `ElasticIp` value from the deploy output. To check the stack status at a later time, run this command:
+Record the `ElasticIp` output. Check status anytime with `wildtunnel aws-ec2 status`.
 
-```sh
-wildtunnel aws-ec2 status
-```
-
-To get the data for the frpc client, run this command:
+Get the frpc client's data (server address, base domain, token, and a ready `frpc config` command):
 
 ```sh
 wildtunnel aws-ec2 info
 ```
 
-This command shows the server address, the base domain, and the token. This command also shows a ready `frpc config` command.
-
 #### Step 2b: Deploy to AWS Lightsail
 
-The AWS Lightsail provider creates these resources: a `nano_3_0` Lightsail instance, frps, Caddy, and a static IP address. Wildtunnel deploys these resources with direct Lightsail API calls. This provider does not use CDK or CloudFormation.
-
-Run these commands to configure and deploy the instance. The `config` command reads the AWS region from your AWS CLI configuration.
+Creates a `nano_3_0` Lightsail instance, frps, Caddy, and a static IP, via direct Lightsail API calls. No CDK, no CloudFormation.
 
 ```sh
-wildtunnel aws-lightsail config --domain dasbd72.com
+wildtunnel aws-lightsail config --domain dasbd72.com   # reads the region from your AWS CLI config
 wildtunnel aws-lightsail deploy
 ```
 
-The `aws-lightsail config` command has the same options as the `aws-ec2 config` command: `--domain`, `--region`, `--extra-port-range`, and `--yes`.
+`aws-lightsail config` takes the same options as `aws-ec2 config`: `--domain`, `--region`, `--extra-port-range`, `--yes`. Check status anytime with `wildtunnel aws-lightsail status`.
 
-To check the instance status at a later time, run this command:
-
-```sh
-wildtunnel aws-lightsail status
-```
-
-Lightsail instances cannot have an IAM role attached. For this reason, wildtunnel writes the frp token directly into the instance user data at deploy time. Unlike the AWS EC2 provider, wildtunnel does not fetch the token from SSM at boot time.
-
-Because of this, the `wildtunnel aws-lightsail info` command works only on the machine that ran the `deploy` command. Wildtunnel does not store the token on a remote server.
-
-To get the data for the frpc client, run this command:
+Lightsail instances cannot have an IAM role, so wildtunnel writes the frp token directly into the instance's user data at deploy time, instead of fetching it from SSM at boot. One effect: `wildtunnel aws-lightsail info` only works on the machine that ran `deploy`, since the token is never stored remotely.
 
 ```sh
 wildtunnel aws-lightsail info
 ```
 
-If you run `aws-lightsail deploy` again on a running instance, the command only syncs the static IP address and the firewall rules. For example, run `deploy` again after you change the `--extra-port-range` option. Lightsail cannot run cloud-init again on an existing instance. For this reason, the `deploy` command never installs frps and Caddy again on an existing instance.
-
-To check for firewall rule differences, run this command:
-
-```sh
-wildtunnel aws-lightsail diff
-```
-
-To force a new installation of frps and Caddy, run the `destroy` command. Then run the `deploy` command again.
+Re-running `deploy` on a live instance only syncs the static IP and firewall rules (for example after changing `--extra-port-range`) — Lightsail cannot re-run cloud-init, so it never reinstalls frps/Caddy. Use `wildtunnel aws-lightsail diff` to check for firewall drift, or `destroy` + `deploy` to force a clean reinstall.
 
 ### Step 3: Point your DNS at the server address
 
-Get the server address. Use the `ElasticIp` value from `aws-ec2 info`, or the static IP address from `aws-lightsail info`.
+Get the server address: the `ElasticIp` from `aws-ec2 info`, or the static IP from `aws-lightsail info`.
 
-Go to your DNS provider, for example Cloudflare. Add a wildcard DNS record: `*.dasbd72.com`, type `A`. Point this record at the server address.
-
-Keep this DNS record in DNS-only mode. Do not enable the Cloudflare proxy (the orange cloud icon). Use the grey cloud icon instead.
-
-Make sure that port 80 is open on your server. Caddy needs port 80 to get a TLS certificate for each host. Caddy gets each certificate on demand, through the Let's Encrypt HTTP-01 method.
+At your DNS provider (for example Cloudflare), add a wildcard `A` record, `*.dasbd72.com`, pointed at that address. Keep it DNS-only — do not enable the Cloudflare proxy (grey cloud, not orange). Make sure port 80 is open: Caddy needs it to get a TLS certificate per host on demand, via Let's Encrypt HTTP-01.
 
 ### Step 4: Configure the frpc client
 
 #### Step 4.1: Add a service
 
-The frpc client does not read data from the deployed server automatically. You must give this data manually. Get this data from the `wildtunnel aws-ec2 info` command or the `wildtunnel aws-lightsail info` command. Copy the values, or copy the full command from the output.
-
-Run these commands to configure the client and add a service:
+frpc does not read the deployed server automatically. Copy the values, or the ready command, from `aws-ec2 info` / `aws-lightsail info`.
 
 ```sh
 wildtunnel frpc config \
@@ -127,34 +87,22 @@ wildtunnel frpc config \
   --base-domain dasbd72.com \
   --token <token>
 wildtunnel frpc add openwebui 192.168.50.10:8080
-# Result: https://openwebui.dasbd72.com
+# -> https://openwebui.dasbd72.com
 ```
 
-Options for the `frpc config` command:
+`frpc config` options `--server-addr`, `--base-domain`, and `--token` are all required.
 
-- `--server-addr`: the public IP address of the server. This option is mandatory.
-- `--base-domain`: the base domain for the tunnel subdomains. This option is mandatory.
-- `--token`: the frp authentication token. This option is mandatory.
-
-Use `frpc add <name> <local-ip>:<local-port>` to add a tunnel for a local service. By default, this command makes an HTTP or HTTPS service available at `<name>.<base-domain>`.
-
-To add a service that does not use HTTP, for example WireGuard, add the `--proto tcp` option or the `--proto udp` option. Also add the `--remote-port <port>` option. This option sets the port on the frps server. Example:
+`frpc add <name> <local-ip>:<local-port>` adds a tunnel for a local service — HTTP/HTTPS at `<name>.<base-domain>` by default. For a non-HTTP service, for example WireGuard, add `--proto tcp` or `--proto udp` with `--remote-port <port>` (must be in the range you set with `--extra-port-range`):
 
 ```sh
 frpc add wireguard 127.0.0.1:51820 --proto udp --remote-port 51820
 ```
 
-The port number must be in the range that you set with the `aws-ec2 config --extra-port-range` option.
-
-Use `frpc list` to show all configured tunnels.
-
-Use `frpc del <name>` to remove a configured tunnel.
+`frpc list` shows configured tunnels. `frpc del <name>` removes one.
 
 #### Step 4.2: Run frpc on a different machine
 
-Use the same data as in step 4.1.
-
-The `render` command writes an `frpc.toml` file to the standard output. This command does not save a file. This command does not start a service.
+Use the same data as step 4.1. The `render` command writes an `frpc.toml` to stdout, without saving a file or starting a service:
 
 ```sh
 wildtunnel frpc render \
@@ -165,9 +113,7 @@ wildtunnel frpc render \
 
 ## Upgrade from aws-reverse-tunnel
 
-The developer renamed this project from `aws-reverse-tunnel` to `wildtunnel`. There is no automatic migration procedure.
-
-To keep your existing configuration, move the configuration directory manually:
+This project was renamed from `aws-reverse-tunnel` to `wildtunnel`. There is no automatic migration. To keep your existing configuration, move the config directory by hand:
 
 ```sh
 mv ~/.config/aws-reverse-tunnel ~/.config/wildtunnel
@@ -175,11 +121,9 @@ mv ~/.config/aws-reverse-tunnel ~/.config/wildtunnel
 
 ## Cost
 
-### AWS EC2 cost
+### AWS EC2
 
-The AWS EC2 stack runs these resources: one `t4g.nano` EC2 host, one 8 GiB gp3 EBS volume, and one Elastic IP address.
-
-The table below shows on-demand list prices for a 730-hour month. These values are estimates. AWS prices can change.
+Runs one `t4g.nano` EC2 host, an 8 GiB gp3 EBS volume, and one Elastic IP. On-demand list prices below for a 730-hour month; treat as estimates, since AWS prices change.
 
 | Resource | ap-northeast-1 (Tokyo) | us-east-1 |
 | --- | --- | --- |
@@ -189,24 +133,16 @@ The table below shows on-demand list prices for a 730-hour month. These values a
 | SSM parameter and KMS | free | free |
 | **Total (idle)** | **~$8.30** | **~$7.35** |
 
-Notes on the AWS EC2 cost table:
+- AWS charges $0.005/hour per public IPv4 address since February 2024 — this applies to the Elastic IP even when idle, making it the largest cost after the host.
+- The table excludes data transfer: egress scales with traffic. 100 GB/month is free, then AWS charges about $0.114/GB in Tokyo and about $0.09/GB in us-east-1.
+- The SSM parameter uses the AWS-managed KMS key, which has no monthly fee.
+- A one-year Compute Savings Plan or Reserved Instance lowers the host cost by about 30–40%.
 
-- AWS started to charge $0.005 per hour for each public IPv4 address on 1 February 2024. This charge applies to the Elastic IP address, even while the host runs. For this reason, the Elastic IP address is the largest cost after the host cost.
-- This table does not include data transfer cost. Wildtunnel is a tunnel tool, so the egress cost increases with your traffic. AWS gives 100 GB of free internet egress each month. After 100 GB, AWS charges about $0.114 per GB in Tokyo and about $0.09 per GB in us-east-1.
-- The SSM parameter uses the AWS-managed KMS key. This key has no monthly fee.
-- A one-year Compute Savings Plan or a Reserved Instance can lower the host cost by 30 to 40 percent.
+### AWS Lightsail
 
-### AWS Lightsail cost
-
-The `nano_3_0` bundle costs a flat $5 per month. Check the current price at [aws.amazon.com/lightsail/pricing](https://aws.amazon.com/lightsail/pricing/).
-
-This price includes the instance, the SSD storage, and a monthly data-transfer allowance. Unlike the AWS EC2 cost model, the AWS Lightsail cost model has no separate EBS charge and no per-GB egress charge. The AWS Lightsail cost model also has no $0.005 per hour public IP address charge. A Lightsail static IP address is free while it stays attached to a running instance.
-
-This simpler pricing has two limits. First, the instance size is fixed at 0.5 GiB RAM, the same RAM size as the EC2 `t4g.nano` instance. Second, AWS does not offer a Savings Plan discount or a Reserved Instance discount for Lightsail.
+The `nano_3_0` bundle is a flat $5/month (check [aws.amazon.com/lightsail/pricing](https://aws.amazon.com/lightsail/pricing/) for current prices) — includes the instance, SSD storage, and a monthly data-transfer allowance. No separate EBS or per-GB egress charges like EC2, and no $0.005/hour IP surcharge (a static IP is free while attached to a running instance). Simpler pricing, at the cost of a fixed 0.5 GiB RAM (same as `t4g.nano`) and no Savings Plan or Reserved Instance discount.
 
 ## Development
-
-Run these commands to set up and test the development environment:
 
 ```sh
 uv sync --all-extras
@@ -217,19 +153,13 @@ uv run pre-commit run --all-files
 
 ### Code layout
 
-- `src/wildtunnel/`: the CLI code and the generic server installer script (`server/assets/server-setup.sh`). This script reads its input from environment variables. This script makes no AWS API calls. For this reason, you can also run this script manually on any Linux VPS.
-- `src/wildtunnel/providers/aws_ec2/`: all AWS EC2 code. This includes the CDK stack, the CDK application entry point, the SSM token helper functions, and the `aws-ec2` CLI command group. This package includes a copy of the stack code. For this reason, the `aws-ec2 deploy` command does not need a clone of this repository.
-- `src/wildtunnel/providers/aws_lightsail/`: all AWS Lightsail code. This includes the `aws-lightsail` CLI command group and the direct boto3 API calls. This provider does not use CDK, because Lightsail has no useful CDK L2 constructs. Also, Lightsail is simpler than EC2 and CloudFormation together, by design.
+- `src/wildtunnel/`: the CLI and the generic server installer (`server/assets/server-setup.sh`), which reads its input from environment variables and makes no AWS calls — so it also runs by hand on any Linux VPS.
+- `src/wildtunnel/providers/aws_ec2/`: all AWS EC2 code — the CDK stack, app entry point, SSM token helpers, and the `aws-ec2` CLI group. Includes the stack itself, so `aws-ec2 deploy` needs no clone of this repo.
+- `src/wildtunnel/providers/aws_lightsail/`: all AWS Lightsail code — the `aws-lightsail` CLI group and direct boto3 calls. No CDK: Lightsail has no useful CDK L2 constructs, and the point of Lightsail is to be simpler than EC2+CloudFormation.
 
 ### Add a new provider
 
-`scripts/new_provider.py` is a script for maintainers only. The installed package does not include this script. The `wildtunnel` CLI does not call this script.
-
-This script generates two directories: `providers/<name>/` and `tests/providers/<name>/`. These directories copy the structure of `providers/aws_ec2/`: a Click command group, a configuration dataclass, and matching test files. After the script runs, the script prints the remaining manual steps.
-
-If the directory `providers/<name>/` already exists, the script stops. The script does not change any files in this case.
-
-Run the script like this:
+`scripts/new_provider.py` is a maintainer-only scaffold, not shipped in the package and not wired into the CLI. It generates `providers/<name>/` and `tests/providers/<name>/`, mirroring `providers/aws_ec2/`'s shape (a Click group, a config dataclass, matching test stubs), then prints the remaining manual steps. Refuses to run if `providers/<name>/` already exists.
 
 ```sh
 uv run python scripts/new_provider.py hetzner
@@ -237,9 +167,9 @@ uv run python scripts/new_provider.py hetzner
 
 ## Known limitations
 
-- The CDK application code creates the frp authentication token. For this reason, the plaintext token is part of the generated CloudFormation template. AWS stores this template parameter as a SecureString value. But a person with read access to the stack can still see the token value. This risk is acceptable for a personal, single-account setup.
-- Lightsail instances cannot have an IAM role attached. For this reason, wildtunnel writes the frp token directly into the instance user data at deploy time. Wildtunnel does not fetch the token from SSM, unlike the AWS EC2 provider. A person who can call the `lightsail:GetInstance` API operation can see the token in the user data. Also, the `wildtunnel aws-lightsail info` command works only on the machine that ran the `deploy` command. Wildtunnel does not store this token on a remote server.
+- The CDK app creates the frp token, so the plaintext token ends up in the generated CloudFormation template. AWS stores it as a SecureString, but a person with read access to the stack can still see it. Acceptable for this personal, single-account setup.
+- Lightsail instances cannot have an IAM role, so wildtunnel writes the frp token directly into the instance's user data instead of fetching it from SSM. A person who can call `lightsail:GetInstance` can see it there. Also, `wildtunnel aws-lightsail info` only works on the machine that ran `deploy`, since the token is never stored remotely.
 
 ## License
 
-This project uses the MIT license. See the [LICENSE](LICENSE) file for the full license text.
+MIT. See [LICENSE](LICENSE).
