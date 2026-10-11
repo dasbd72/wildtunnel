@@ -20,7 +20,6 @@ from wildtunnel.dashboard.stats import (
 )
 
 _INVALID_CREDENTIALS = HTTPException(status_code=401, detail="invalid credentials")
-_NOT_AUTHENTICATED = HTTPException(status_code=401, detail="not authenticated")
 _INVALID_OR_EXPIRED_TOKEN = HTTPException(
     status_code=400, detail="invalid or expired token"
 )
@@ -28,6 +27,10 @@ _INVALID_OR_EXPIRED_TOKEN = HTTPException(
 
 class _MustChangePassword(Exception):
     """Raised by current_admin_with_password_set to force /change-password."""
+
+
+class _NotAuthenticated(Exception):
+    """Raised by current_admin to send an unauthenticated request to /login."""
 
 
 _STYLE = """
@@ -188,10 +191,10 @@ def create_app(
 
     async def current_admin(request: Request) -> Admin:
         if not request.session.get("authenticated"):
-            raise _NOT_AUTHENTICATED
+            raise _NotAuthenticated
         admin = db.get_admin(request.app.state.conn)
         if admin is None:
-            raise _NOT_AUTHENTICATED
+            raise _NotAuthenticated
         return admin
 
     async def current_admin_with_password_set(
@@ -210,6 +213,12 @@ def create_app(
         request: Request, exc: _MustChangePassword
     ) -> RedirectResponse:
         return RedirectResponse(url="/change-password", status_code=303)
+
+    @app.exception_handler(_NotAuthenticated)
+    async def _redirect_to_login(
+        request: Request, exc: _NotAuthenticated
+    ) -> RedirectResponse:
+        return RedirectResponse(url="/login", status_code=303)
 
     @app.get("/login")
     async def login_form() -> HTMLResponse:

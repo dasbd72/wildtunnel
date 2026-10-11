@@ -70,12 +70,13 @@ def test_login_page_has_a_mobile_viewport_meta_tag() -> None:
     )
 
 
-def test_root_rejects_unauthenticated_request() -> None:
+def test_root_redirects_unauthenticated_request_to_login() -> None:
     client = _client_with_admin()
 
     response = client.get("/", follow_redirects=False)
 
-    assert response.status_code == 401
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/login"
 
 
 def test_login_with_wrong_password_fails_generically() -> None:
@@ -142,15 +143,17 @@ def test_missing_session_cookie_is_rejected_on_a_fresh_client() -> None:
     fresh_client = TestClient(client.app)
     response = fresh_client.get("/", follow_redirects=False)
 
-    assert response.status_code == 401
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/login"
 
 
-def test_stats_rejects_unauthenticated_request() -> None:
+def test_stats_redirects_unauthenticated_request_to_login() -> None:
     client = _client_with_admin()
 
     response = client.get("/stats", follow_redirects=False)
 
-    assert response.status_code == 401
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/login"
 
 
 def test_stats_shows_per_tunnel_connections_and_bandwidth_when_authenticated() -> None:
@@ -173,12 +176,13 @@ def test_stats_shows_per_tunnel_connections_and_bandwidth_when_authenticated() -
     assert "2048" in response.text
 
 
-def test_egress_rejects_unauthenticated_request() -> None:
+def test_egress_redirects_unauthenticated_request_to_login() -> None:
     client = _client_with_admin()
 
     response = client.get("/egress", follow_redirects=False)
 
-    assert response.status_code == 401
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/login"
 
 
 def test_egress_shows_day_week_month_totals_per_tunnel_when_authenticated() -> None:
@@ -244,7 +248,8 @@ def test_tampered_session_cookie_is_rejected() -> None:
     client.cookies.set("session", "tampered-value")
     response = client.get("/", follow_redirects=False)
 
-    assert response.status_code == 401
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/login"
 
 
 def test_change_password_page_includes_current_password_field_when_not_forced() -> None:
@@ -300,14 +305,15 @@ def test_full_change_password_succeeds_with_correct_current_password() -> None:
     assert new_login.status_code in (302, 303)
 
 
-def test_bind_recovery_email_requires_authentication() -> None:
+def test_bind_recovery_email_redirects_unauthenticated_request_to_login() -> None:
     client = _client_with_admin(password="correct-horse", must_change_password=False)
 
     response = client.post(
         "/account/email", data={"email": "admin@example.com"}, follow_redirects=False
     )
 
-    assert response.status_code == 401
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/login"
 
 
 def test_logged_in_admin_can_bind_recovery_email() -> None:
@@ -449,7 +455,8 @@ def test_logout_clears_session_so_subsequent_requests_are_unauthenticated() -> N
     assert logout.headers["location"] == "/login"
 
     response = client.get("/", follow_redirects=False)
-    assert response.status_code == 401
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/login"
 
 
 def test_reset_password_rejects_expired_token() -> None:
