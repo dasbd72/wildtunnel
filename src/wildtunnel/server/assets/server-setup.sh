@@ -7,6 +7,8 @@ set -euxo pipefail
 : "${CADDY_VERSION:?CADDY_VERSION is required}"
 : "${FRP_BIND_PORT:?FRP_BIND_PORT is required}"
 : "${FRP_VHOST_HTTP_PORT:?FRP_VHOST_HTTP_PORT is required}"
+: "${FRP_STATS_USER:?FRP_STATS_USER is required}"
+: "${FRP_STATS_PASSWORD:?FRP_STATS_PASSWORD is required}"
 ALLOW_PORTS="${ALLOW_PORTS:-}"
 
 # Provider-agnostic: this box may be ARM (EC2 Graviton) or x86_64
@@ -43,6 +45,14 @@ bindPort = ${FRP_BIND_PORT}
 auth.method = "token"
 auth.token = "${FRP_TOKEN}"
 vhostHTTPPort = ${FRP_VHOST_HTTP_PORT}
+# Stats API for the wildtunnel dashboard (StatsSource) to poll per-tunnel
+# connection counts and traffic. Bound to loopback only - never exposed
+# to the internet - and gated by basic auth so a local process can't
+# read it without credentials.
+webServer.addr = "127.0.0.1"
+webServer.port = 7500
+webServer.user = "${FRP_STATS_USER}"
+webServer.password = "${FRP_STATS_PASSWORD}"
 EOF
 if [[ -n "${ALLOW_PORTS}" ]]; then
   echo "${ALLOW_PORTS}" >> /opt/frp/frps.toml

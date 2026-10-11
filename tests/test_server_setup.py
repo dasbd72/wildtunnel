@@ -17,6 +17,8 @@ _ENV_VAR_CONTRACT = (
     "FRP_BIND_PORT",
     "FRP_VHOST_HTTP_PORT",
     "ALLOW_PORTS",
+    "FRP_STATS_USER",
+    "FRP_STATS_PASSWORD",
 )
 
 
@@ -46,3 +48,17 @@ def test_detects_cpu_architecture_instead_of_hardcoding_it() -> None:
     assert "linux_arm64" not in _SCRIPT
     assert "linux_amd64" not in _SCRIPT
     assert "linux_${ARCH}" in _SCRIPT
+
+
+def test_webserver_stats_are_bound_to_loopback_only() -> None:
+    # The frps stats API that StatsSource polls must never be reachable
+    # from outside the box.
+    assert 'webServer.addr = "127.0.0.1"' in _SCRIPT
+    assert "webServer.port" in _SCRIPT
+
+
+def test_webserver_stats_require_basic_auth_credentials() -> None:
+    assert "webServer.user" in _SCRIPT
+    assert "webServer.password" in _SCRIPT
+    assert "${FRP_STATS_USER}" in _SCRIPT
+    assert "${FRP_STATS_PASSWORD}" in _SCRIPT

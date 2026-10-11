@@ -28,7 +28,9 @@ def completion(shell: str) -> None:
     """
     comp_cls = get_completion_class(shell)
     assert comp_cls is not None  # guaranteed by click.Choice above
-    comp = comp_cls(cli=main, ctx_args={}, prog_name="wildtunnel", complete_var=COMPLETE_VAR)
+    comp = comp_cls(
+        cli=main, ctx_args={}, prog_name="wildtunnel", complete_var=COMPLETE_VAR
+    )
     click.echo(comp.source())
 
 
