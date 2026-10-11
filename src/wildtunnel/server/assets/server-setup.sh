@@ -136,6 +136,21 @@ EOF
 systemctl daemon-reload
 systemctl enable --now wildtunnel-dashboard
 
+# SSH-based admin password recovery: `sudo wildtunnel-reset-password`
+# generates a fresh admin password, forces a change on next login, and
+# prints the new password - the only recovery path now that there's no
+# email-based forgot-password flow. Runs against its own sqlite
+# connection, so it is safe to use without stopping the dashboard
+# service first.
+cat > /usr/local/bin/wildtunnel-reset-password <<EOF
+#!/bin/bash
+set -euo pipefail
+export DASHBOARD_DB_PATH=/var/lib/wildtunnel-dashboard/dashboard.db
+export DASHBOARD_SECRET_FILE=/var/lib/wildtunnel-dashboard/admin-password.txt
+exec /opt/wildtunnel-dashboard/bin/python -m wildtunnel.dashboard.reset_password
+EOF
+chmod +x /usr/local/bin/wildtunnel-reset-password
+
 # --- caddy (reverse proxy + TLS termination) ---
 curl -fsSL -o /tmp/caddy.tar.gz \
   "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"

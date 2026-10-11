@@ -105,6 +105,31 @@ def test_dashboard_bootstraps_admin_before_serving() -> None:
     assert "wildtunnel.dashboard.main" in _SCRIPT
 
 
+def test_installs_reset_password_executable() -> None:
+    assert "/usr/local/bin/wildtunnel-reset-password" in _SCRIPT
+
+
+def test_reset_password_wrapper_targets_the_live_dashboard_database() -> None:
+    # Must match the same literal paths the dashboard systemd unit uses,
+    # so a reset operates on the exact database/secret file in use.
+    assert "DASHBOARD_DB_PATH=/var/lib/wildtunnel-dashboard/dashboard.db" in _SCRIPT
+    assert (
+        "DASHBOARD_SECRET_FILE=/var/lib/wildtunnel-dashboard/admin-password.txt"
+        in _SCRIPT
+    )
+
+
+def test_reset_password_wrapper_invokes_reset_password_module() -> None:
+    assert (
+        "/opt/wildtunnel-dashboard/bin/python -m wildtunnel.dashboard.reset_password"
+        in _SCRIPT
+    )
+
+
+def test_reset_password_wrapper_is_made_executable() -> None:
+    assert "chmod +x /usr/local/bin/wildtunnel-reset-password" in _SCRIPT
+
+
 def test_caddyfile_routes_wildtunnel_subdomain_to_dashboard_ahead_of_wildcard() -> None:
     caddyfile_start = _SCRIPT.index("cat > /etc/caddy/Caddyfile")
     wildcard_start = _SCRIPT.index("*.${DOMAIN} {", caddyfile_start)
