@@ -6,21 +6,21 @@ from wildtunnel.dashboard.stats import FrpsStatsSource, ProxyStats
 
 # frp's webServer stats API returns one JSON body per proxy type
 # (/api/proxy/tcp, /api/proxy/udp, ...), each shaped like:
-#   {"proxies": [{"name": ..., "cur_conns": ..., "today_traffic_in": ...,
-#                 "today_traffic_out": ...}, ...]}
+#   {"proxies": [{"name": ..., "curConns": ..., "todayTrafficIn": ...,
+#                 "todayTrafficOut": ...}, ...]}
 _TCP_BODY = {
     "proxies": [
         {
             "name": "home-ssh",
-            "cur_conns": 2,
-            "today_traffic_in": 1024,
-            "today_traffic_out": 2048,
+            "curConns": 2,
+            "todayTrafficIn": 1024,
+            "todayTrafficOut": 2048,
         },
         {
             "name": "home-web",
-            "cur_conns": 0,
-            "today_traffic_in": 512,
-            "today_traffic_out": 256,
+            "curConns": 0,
+            "todayTrafficIn": 512,
+            "todayTrafficOut": 256,
         },
     ]
 }
