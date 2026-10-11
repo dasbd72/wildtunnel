@@ -103,7 +103,7 @@ wildtunnel aws-lightsail diff
 
 To force a new installation of frps and Caddy, run the `destroy` command. Then run the `deploy` command again.
 
-#### Step 2c: Point your DNS at the server address
+### Step 3: Point your DNS at the server address
 
 Get the server address. Use the `ElasticIp` value from `aws-ec2 info`, or the static IP address from `aws-lightsail info`.
 
@@ -113,9 +113,9 @@ Keep this DNS record in DNS-only mode. Do not enable the Cloudflare proxy (the o
 
 Make sure that port 80 is open on your server. Caddy needs port 80 to get a TLS certificate for each host. Caddy gets each certificate on demand, through the Let's Encrypt HTTP-01 method.
 
-### Step 3: Configure the frpc client
+### Step 4: Configure the frpc client
 
-#### Step 3.1: Add a service
+#### Step 4.1: Add a service
 
 The frpc client does not read data from the deployed server automatically. You must give this data manually. Get this data from the `wildtunnel aws-ec2 info` command or the `wildtunnel aws-lightsail info` command. Copy the values, or copy the full command from the output.
 
@@ -150,9 +150,9 @@ Use `frpc list` to show all configured tunnels.
 
 Use `frpc del <name>` to remove a configured tunnel.
 
-#### Step 3.2: Run frpc on a different machine
+#### Step 4.2: Run frpc on a different machine
 
-Use the same data as in step 3.1.
+Use the same data as in step 4.1.
 
 The `render` command writes an `frpc.toml` file to the standard output. This command does not save a file. This command does not start a service.
 
