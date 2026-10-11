@@ -162,10 +162,10 @@ def config(
         extra_port_range=port_range,
     )
 
-    # aws-ec2 and aws-lightsail share one config.json (see paths.py); if
-    # it currently belongs to a different provider there's nothing of
-    # this provider's shape to compare against, so switch over silently
-    # instead of crashing trying to load it as our own.
+    # A config file only holds another provider's shape if it was
+    # manually copied/edited (see other_provider() in paths.py) - in
+    # that case there's nothing of this provider's shape to compare
+    # against, so switch over silently instead of crashing on load.
     if (
         AWS_EC2_CONFIG_FILE.exists()
         and other_provider(AWS_EC2_CONFIG_FILE, PROVIDER) is None

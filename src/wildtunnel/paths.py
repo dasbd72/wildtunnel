@@ -22,16 +22,8 @@ FRPC_TOML_FILE = CONFIG_DIR / "frpc.toml"
 # losing FRPC_CONFIG_FILE's cached token, or FRP_TOKEN_FILE, rotates/loses
 # the token and breaks every frpc client until re-`config`ured. All three
 # live alongside each other, not in a cache.
-AWS_EC2_CONFIG_FILE = CONFIG_DIR / "config.json"
+AWS_EC2_CONFIG_FILE = CONFIG_DIR / "aws-ec2-config.json"
 FRP_TOKEN_FILE = CONFIG_DIR / "frp-token"
-
-# Each provider keeps its own config file. An earlier version had both
-# providers share AWS_EC2_CONFIG_FILE (discriminated by a top-level
-# "provider" field), on the assumption that only one provider is ever
-# deployed at a time - but a user can have an aws-ec2 stack AND an
-# aws-lightsail instance deployed simultaneously, and switching the
-# "active" provider overwrote the other one's region, breaking its own
-# `status`/`destroy`/etc. Separate files let both stay manageable at once.
 AWS_LIGHTSAIL_CONFIG_FILE = CONFIG_DIR / "aws-lightsail-config.json"
 
 
