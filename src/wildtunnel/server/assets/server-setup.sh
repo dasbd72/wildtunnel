@@ -151,6 +151,24 @@ exec /opt/wildtunnel-dashboard/bin/python -m wildtunnel.dashboard.reset_password
 EOF
 chmod +x /usr/local/bin/wildtunnel-reset-password
 
+# Server-side upgrade: `sudo wildtunnel-upgrade` pulls the latest
+# wildtunnel[dashboard] release from PyPI into the existing venv and
+# restarts the dashboard service. This is the only way to pick up
+# dashboard fixes (e.g. stats parsing, UI changes) on an
+# already-deployed instance - `deploy` never re-runs provisioning on a
+# live box (see deploy_instance's docstring), so it can't push code
+# updates itself. frps/Caddy versions are provisioned once at deploy
+# time and are out of scope here - this only ever touches the venv.
+cat > /usr/local/bin/wildtunnel-upgrade <<'EOF'
+#!/bin/bash
+set -euo pipefail
+/opt/wildtunnel-dashboard/bin/pip install --upgrade "wildtunnel[dashboard]"
+systemctl restart wildtunnel-dashboard
+/opt/wildtunnel-dashboard/bin/python -c \
+  'import importlib.metadata as m; print("upgraded to wildtunnel " + m.version("wildtunnel"))'
+EOF
+chmod +x /usr/local/bin/wildtunnel-upgrade
+
 # --- caddy (reverse proxy + TLS termination) ---
 curl -fsSL -o /tmp/caddy.tar.gz \
   "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"

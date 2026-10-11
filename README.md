@@ -147,6 +147,16 @@ The dashboard has these pages:
 
 If you open a dashboard page before you log in, the dashboard sends you to `/login`.
 
+### Server-side admin commands
+
+Connect to the instance to run these as root:
+
+- **AWS EC2**: `aws ssm start-session --target <instance-id>` — EC2's security group has no SSH rule at all; admin access goes through SSM Session Manager via the instance's IAM role instead.
+- **AWS Lightsail**: SSH is closed to the public internet by default — use the Lightsail console's browser-based SSH, or pass `--ssh-cidr 1.2.3.4/32` to `deploy`/`diff` to additionally open a regular SSH client to your IP (see the SSH note under Step 2b above).
+
+- `sudo wildtunnel-reset-password`: generates a new admin password, forces a change on next login, and prints the new password. The only account-recovery path if you're locked out — there's no email-based forgot-password flow.
+- `sudo wildtunnel-upgrade`: upgrades the installed `wildtunnel[dashboard]` package to the latest PyPI release and restarts the dashboard service. The only way to pick up dashboard fixes on an already-deployed instance — `deploy` never re-provisions a live box, so it can't push code updates by itself.
+
 ## Upgrade from aws-reverse-tunnel
 
 This project was renamed from `aws-reverse-tunnel` to `wildtunnel`. There is no automatic migration. To keep your existing configuration, move the config directory by hand:

@@ -130,6 +130,28 @@ def test_reset_password_wrapper_is_made_executable() -> None:
     assert "chmod +x /usr/local/bin/wildtunnel-reset-password" in _SCRIPT
 
 
+def test_installs_upgrade_executable() -> None:
+    assert "/usr/local/bin/wildtunnel-upgrade" in _SCRIPT
+
+
+def test_upgrade_wrapper_upgrades_the_dashboard_venv_package() -> None:
+    assert '/opt/wildtunnel-dashboard/bin/pip install --upgrade "wildtunnel[dashboard]"' in (
+        _SCRIPT
+    )
+
+
+def test_upgrade_wrapper_restarts_the_dashboard_service() -> None:
+    upgrade_start = _SCRIPT.index("cat > /usr/local/bin/wildtunnel-upgrade")
+    upgrade_end = _SCRIPT.index("chmod +x /usr/local/bin/wildtunnel-upgrade")
+    upgrade_wrapper = _SCRIPT[upgrade_start:upgrade_end]
+
+    assert "systemctl restart wildtunnel-dashboard" in upgrade_wrapper
+
+
+def test_upgrade_wrapper_is_made_executable() -> None:
+    assert "chmod +x /usr/local/bin/wildtunnel-upgrade" in _SCRIPT
+
+
 def test_caddyfile_routes_wildtunnel_subdomain_to_dashboard_ahead_of_wildcard() -> None:
     caddyfile_start = _SCRIPT.index("cat > /etc/caddy/Caddyfile")
     wildcard_start = _SCRIPT.index("*.${DOMAIN} {", caddyfile_start)
