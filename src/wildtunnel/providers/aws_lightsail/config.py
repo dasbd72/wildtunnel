@@ -128,6 +128,8 @@ def render_user_data(
     smtp_port: str = "",
     smtp_username: str = "",
     smtp_password: str = "",
+    frp_stats_user: str = "",
+    frp_stats_password: str = "",
 ) -> str:
     allow_ports = (
         f"allowPorts = [{{ start = {extra_port_range[0]}, "
@@ -148,6 +150,8 @@ def render_user_data(
         "__SMTP_PORT__": smtp_port,
         "__SMTP_USERNAME__": smtp_username,
         "__SMTP_PASSWORD__": smtp_password,
+        "__FRP_STATS_USER__": frp_stats_user,
+        "__FRP_STATS_PASSWORD__": frp_stats_password,
         "__SERVER_SETUP_SCRIPT__": _SERVER_SETUP_SCRIPT.read_text(),
     }.items():
         script = script.replace(placeholder, value)
@@ -214,7 +218,13 @@ def _wait_until_running(client: Any) -> None:
     )
 
 
-def deploy_instance(config: AwsLightsailConfig, frp_token: str) -> str:
+def deploy_instance(
+    config: AwsLightsailConfig,
+    frp_token: str,
+    *,
+    frp_stats_user: str,
+    frp_stats_password: str,
+) -> str:
     """Create the instance and static IP if missing, then sync firewall rules.
 
     Idempotent: safe to call again against an already-deployed instance.
@@ -234,6 +244,8 @@ def deploy_instance(config: AwsLightsailConfig, frp_token: str) -> str:
             frp_version=FRP_VERSION,
             caddy_version=CADDY_VERSION,
             extra_port_range=config.extra_port_range,
+            frp_stats_user=frp_stats_user,
+            frp_stats_password=frp_stats_password,
         )
         client.create_instances(
             instanceNames=[INSTANCE_NAME],

@@ -230,6 +230,17 @@ def test_user_data_wrapper_embeds_configured_smtp_settings() -> None:
     assert "relay-pass" in user_data
 
 
+def test_user_data_wrapper_embeds_frp_stats_credentials() -> None:
+    template = _build_template(
+        frp_stats_user="dashboard",
+        frp_stats_password="s3cret-stats-pass",
+    )
+
+    user_data = _user_data(template)
+    assert 'FRP_STATS_USER="dashboard"' in user_data
+    assert 'FRP_STATS_PASSWORD="s3cret-stats-pass"' in user_data
+
+
 def test_user_data_wrapper_retries_ssm_token_fetch() -> None:
     template = _build_template()
 

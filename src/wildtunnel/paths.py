@@ -24,6 +24,7 @@ FRPC_TOML_FILE = CONFIG_DIR / "frpc.toml"
 # live alongside each other, not in a cache.
 AWS_EC2_CONFIG_FILE = CONFIG_DIR / "aws-ec2-config.json"
 FRP_TOKEN_FILE = CONFIG_DIR / "frp-token"
+FRP_STATS_PASSWORD_FILE = CONFIG_DIR / "frp-stats-password"
 AWS_LIGHTSAIL_CONFIG_FILE = CONFIG_DIR / "aws-lightsail-config.json"
 
 

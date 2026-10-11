@@ -5,9 +5,11 @@ import secrets
 
 import aws_cdk as cdk
 
-from ...paths import FRP_TOKEN_FILE
+from ...paths import FRP_STATS_PASSWORD_FILE, FRP_TOKEN_FILE
 from .config import STACK_NAME
 from .tunnel_stack import TunnelStack
+
+FRP_STATS_USER = "dashboard"
 
 
 def _get_or_create_frp_token() -> str:
@@ -21,6 +23,20 @@ def _get_or_create_frp_token() -> str:
     FRP_TOKEN_FILE.write_text(token)
     FRP_TOKEN_FILE.chmod(0o600)
     return token
+
+
+def _get_or_create_frp_stats_password() -> str:
+    # Same reasoning as _get_or_create_frp_token: cached so re-deploys don't
+    # rotate the credential frps's webServer and the dashboard app both need
+    # to agree on. Purely internal to this VPS (loopback-only), so unlike the
+    # frp tunnel token nothing else outside this box ever needs to know it.
+    if FRP_STATS_PASSWORD_FILE.exists():
+        return FRP_STATS_PASSWORD_FILE.read_text().strip()
+    password = secrets.token_urlsafe(32)
+    FRP_STATS_PASSWORD_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FRP_STATS_PASSWORD_FILE.write_text(password)
+    FRP_STATS_PASSWORD_FILE.chmod(0o600)
+    return password
 
 
 # CDK feature flags — previously lived in infra/cdk.json (now removed, since
@@ -85,6 +101,8 @@ TunnelStack(
     domain_name=domain_name,
     frp_token=_get_or_create_frp_token(),
     extra_port_range=extra_port_range,
+    frp_stats_user=FRP_STATS_USER,
+    frp_stats_password=_get_or_create_frp_stats_password(),
 )
 
 app.synth()

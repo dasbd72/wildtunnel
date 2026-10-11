@@ -14,6 +14,9 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         aws_lightsail_cli, "AWS_LIGHTSAIL_CONFIG_FILE", tmp_path / "config.json"
     )
     monkeypatch.setattr(aws_lightsail_cli, "FRP_TOKEN_FILE", tmp_path / "frp-token")
+    monkeypatch.setattr(
+        aws_lightsail_cli, "FRP_STATS_PASSWORD_FILE", tmp_path / "frp-stats-password"
+    )
     return tmp_path
 
 
@@ -181,7 +184,7 @@ class TestDeploy:
         monkeypatch.setattr(
             aws_lightsail_cli,
             "deploy_instance",
-            lambda _config, _token: "1.2.3.4",
+            lambda _config, _token, **_kwargs: "1.2.3.4",
         )
         runner = CliRunner()
 
@@ -196,7 +199,7 @@ class TestDeploy:
         _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
         seen_tokens: list[str] = []
 
-        def _fake_deploy(_config: object, token: str) -> str:
+        def _fake_deploy(_config: object, token: str, **_kwargs: object) -> str:
             seen_tokens.append(token)
             return "1.2.3.4"
 
@@ -209,12 +212,31 @@ class TestDeploy:
         assert len(seen_tokens) == 2
         assert seen_tokens[0] == seen_tokens[1]
 
+    def test_generates_stats_password_once_and_reuses_it(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        seen_passwords: list[str] = []
+
+        def _fake_deploy(_config: object, _token: str, **kwargs: object) -> str:
+            seen_passwords.append(str(kwargs["frp_stats_password"]))
+            return "1.2.3.4"
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _fake_deploy)
+        runner = CliRunner()
+
+        runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+        runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert len(seen_passwords) == 2
+        assert seen_passwords[0] == seen_passwords[1]
+
     def test_wraps_client_error_clearly(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
 
-        def _boom(_config: object, _token: str) -> str:
+        def _boom(_config: object, _token: str, **_kwargs: object) -> str:
             raise ClientError(
                 {"Error": {"Code": "AccessDenied", "Message": "nope"}},
                 "CreateInstances",
@@ -233,7 +255,7 @@ class TestDeploy:
     ) -> None:
         _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
 
-        def _boom(_config: object, _token: str) -> str:
+        def _boom(_config: object, _token: str, **_kwargs: object) -> str:
             raise TimeoutError("instance 'wildtunnel' did not reach running in time")
 
         monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _boom)

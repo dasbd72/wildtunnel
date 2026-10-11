@@ -114,6 +114,24 @@ def test_render_user_data_embeds_configured_smtp_settings() -> None:
     assert not re.search(r"__[A-Z_]+__", script)
 
 
+def test_render_user_data_embeds_frp_stats_credentials() -> None:
+    script = render_user_data(
+        domain="example.com",
+        frp_token="s3cret-token",
+        frp_bind_port=7000,
+        frp_vhost_http_port=7080,
+        frp_version="0.71.0",
+        caddy_version="2.9.1",
+        extra_port_range=None,
+        frp_stats_user="dashboard",
+        frp_stats_password="s3cret-stats-pass",
+    )
+
+    assert 'FRP_STATS_USER="dashboard"' in script
+    assert 'FRP_STATS_PASSWORD="s3cret-stats-pass"' in script
+    assert not re.search(r"__[A-Z_]+__", script)
+
+
 def test_render_user_data_sets_allow_ports_when_extra_range_given() -> None:
     script = render_user_data(
         domain="example.com",

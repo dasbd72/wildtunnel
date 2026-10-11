@@ -7,7 +7,12 @@ import click
 from botocore.exceptions import ClientError
 
 from ...frpc_config import DEFAULT_SERVER_PORT
-from ...paths import AWS_LIGHTSAIL_CONFIG_FILE, FRP_TOKEN_FILE, other_provider
+from ...paths import (
+    AWS_LIGHTSAIL_CONFIG_FILE,
+    FRP_STATS_PASSWORD_FILE,
+    FRP_TOKEN_FILE,
+    other_provider,
+)
 from ...prompts import confirm_overwrite
 from .config import (
     PROVIDER,
@@ -58,6 +63,23 @@ def _get_or_create_frp_token() -> str:
     FRP_TOKEN_FILE.write_text(token)
     FRP_TOKEN_FILE.chmod(0o600)
     return token
+
+
+FRP_STATS_USER = "dashboard"
+
+
+def _get_or_create_frp_stats_password() -> str:
+    # Same reasoning as _get_or_create_frp_token: cached so re-deploys don't
+    # rotate the credential frps's webServer and the dashboard app both need
+    # to agree on. Purely internal to this VPS (loopback-only), so unlike the
+    # frp tunnel token nothing else outside this box ever needs to know it.
+    if FRP_STATS_PASSWORD_FILE.exists():
+        return FRP_STATS_PASSWORD_FILE.read_text().strip()
+    password = secrets.token_urlsafe(32)
+    FRP_STATS_PASSWORD_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FRP_STATS_PASSWORD_FILE.write_text(password)
+    FRP_STATS_PASSWORD_FILE.chmod(0o600)
+    return password
 
 
 def _parse_port_range(value: str) -> tuple[int, int]:
@@ -154,7 +176,12 @@ def deploy() -> None:
     aws_lightsail_config = _load_config()
     token = _get_or_create_frp_token()
     try:
-        public_ip = deploy_instance(aws_lightsail_config, token)
+        public_ip = deploy_instance(
+            aws_lightsail_config,
+            token,
+            frp_stats_user=FRP_STATS_USER,
+            frp_stats_password=_get_or_create_frp_stats_password(),
+        )
     except (ClientError, TimeoutError) as exc:
         raise click.ClickException(f"deploy failed: {exc}") from exc
     click.echo(f"deployed; static IP: {public_ip}")
