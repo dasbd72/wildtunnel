@@ -252,8 +252,18 @@ def add(name: str, target: str, proto: str, remote_port: int | None, yes: bool) 
         click.echo(f"{cfg.server_addr}:{remote_port} ({proto}) -> {target}")
 
 
+def _complete_service_name(
+    ctx: click.Context, param: click.Parameter, incomplete: str
+) -> list[str]:
+    try:
+        services = load_services(SERVICES_FILE)
+    except Exception:
+        return []
+    return [name for name in services if name.startswith(incomplete)]
+
+
 @frpc.command(name="del")
-@click.argument("name")
+@click.argument("name", shell_complete=_complete_service_name)
 def del_(name: str) -> None:
     """Stop exposing NAME."""
     cfg = _load_config()

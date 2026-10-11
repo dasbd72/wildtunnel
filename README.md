@@ -22,6 +22,14 @@ uv tool install 'wildtunnel[aws-ec2]'
 uv tool install wildtunnel
 ```
 
+Tab completion for subcommands, flags, and tunnel names (`frpc del <tab>`) is available for bash, zsh, and fish. Add the line for your shell to its rc file, then restart your shell:
+
+```sh
+source <(wildtunnel completion bash)   # ~/.bashrc
+source <(wildtunnel completion zsh)    # ~/.zshrc
+wildtunnel completion fish | source    # ~/.config/fish/config.fish
+```
+
 ### Step 2: Deploy the server
 
 Pick one provider.
