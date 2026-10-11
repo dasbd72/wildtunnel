@@ -1,5 +1,10 @@
 # Wildtunnel
 
+[![PyPI](https://img.shields.io/pypi/v/wildtunnel)](https://pypi.org/project/wildtunnel/)
+[![Python versions](https://img.shields.io/pypi/pyversions/wildtunnel)](https://pypi.org/project/wildtunnel/)
+[![Publish to PyPI](https://github.com/dasbd72/wildtunnel/actions/workflows/publish.yml/badge.svg)](https://github.com/dasbd72/wildtunnel/actions/workflows/publish.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 This tool makes a home-network service available at `<name>.<domain>`. It does not open an inbound port at home.
 
 ```
