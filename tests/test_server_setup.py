@@ -85,6 +85,16 @@ def test_installs_and_enables_dashboard_systemd_service() -> None:
     assert "systemctl enable --now wildtunnel-dashboard" in _SCRIPT
 
 
+def test_dashboard_venv_uses_a_python_new_enough_for_wildtunnel() -> None:
+    # pyproject.toml requires Python >=3.12, but Amazon Linux 2023's
+    # default `python3` is 3.9 - a venv built with the bare `python3`
+    # command silently gets a too-old interpreter and `pip install
+    # wildtunnel[dashboard]` fails to find any compatible release.
+    assert "dnf install -y python3.12" in _SCRIPT
+    assert "python3.12 -m venv" in _SCRIPT
+    assert "python3 -m venv" not in _SCRIPT
+
+
 def test_dashboard_binds_loopback_only() -> None:
     # No new security-group/firewall port is opened for the dashboard -
     # it must only ever be reachable via Caddy on 127.0.0.1.

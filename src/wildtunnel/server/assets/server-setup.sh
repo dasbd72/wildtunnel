@@ -90,10 +90,12 @@ systemctl enable --now frps
 #
 # frps/caddy ship as prebuilt release binaries, but there's no such
 # release for wildtunnel's dashboard extra, so it's installed the normal
-# Python way: a venv plus `pip install` from PyPI. python3/pip3 ship in
-# Amazon Linux 2023's base repos.
-dnf install -y python3 python3-pip
-python3 -m venv /opt/wildtunnel-dashboard
+# Python way: a venv plus `pip install` from PyPI. Amazon Linux 2023's
+# *default* `python3` is 3.9, but wildtunnel requires >=3.12 - install the
+# versioned package explicitly rather than getting a too-old interpreter
+# that silently can't find any compatible release on PyPI.
+dnf install -y python3.12 python3.12-pip
+python3.12 -m venv /opt/wildtunnel-dashboard
 /opt/wildtunnel-dashboard/bin/pip install --upgrade pip
 /opt/wildtunnel-dashboard/bin/pip install "wildtunnel[dashboard]"
 
