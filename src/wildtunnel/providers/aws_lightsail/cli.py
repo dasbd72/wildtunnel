@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import secrets
 
 import boto3
@@ -97,6 +98,30 @@ def _get_or_create_dashboard_admin_password() -> str:
     return password
 
 
+def _parse_ssh_cidr(value: str) -> str:
+    # Lightsail's cidrs field (where this value ends up) is IPv4-only -
+    # IPv6 ranges need the separate ipv6Cidrs field, which this provider
+    # never sets - so validate as IPv4 specifically rather than accepting
+    # any CIDR and failing later with an opaque AWS API error.
+    try:
+        ipaddress.IPv4Network(value, strict=False)
+    except ValueError as exc:
+        raise click.BadParameter(
+            f"invalid --ssh-cidr {value!r}; expected an IPv4 CIDR like 1.2.3.4/32",
+            param_hint="--ssh-cidr",
+        ) from exc
+    return value
+
+
+_SSH_CIDR_HELP = (
+    "Additionally open SSH (port 22) to this CIDR, e.g. 1.2.3.4/32 for your "
+    "current IP, for a real SSH client. By default SSH is only reachable "
+    "via the Lightsail console's browser-based SSH (the 'lightsail-connect' "
+    "firewall alias) - not opened to any public IP. One-shot: not saved to "
+    "config, so omit it on a later deploy/diff to close client SSH again."
+)
+
+
 def _parse_port_range(value: str) -> tuple[int, int]:
     start_str, sep, end_str = value.partition("-")
     if not sep or not start_str.isdigit() or not end_str.isdigit():
@@ -180,14 +205,22 @@ def config(
 
 
 @aws_lightsail.command()
-def deploy() -> None:
+@click.option(
+    "--ssh-cidr",
+    default=None,
+    metavar="CIDR",
+    help=_SSH_CIDR_HELP,
+)
+def deploy(ssh_cidr: str | None) -> None:
     """Deploy (or update) the Lightsail instance.
 
     Only provisions frps/Caddy on first create - Lightsail has no
     equivalent of re-running cloud-init on an existing instance, so
     re-running this against a live instance only syncs the static IP and
-    firewall rules (e.g. after changing --extra-port-range).
+    firewall rules (e.g. after changing --extra-port-range or --ssh-cidr).
     """
+    if ssh_cidr is not None:
+        ssh_cidr = _parse_ssh_cidr(ssh_cidr)
     aws_lightsail_config = _load_config()
     token = _get_or_create_frp_token()
     admin_password = _get_or_create_dashboard_admin_password()
@@ -198,6 +231,7 @@ def deploy() -> None:
             frp_stats_user=FRP_STATS_USER,
             frp_stats_password=_get_or_create_frp_stats_password(),
             dashboard_admin_password=admin_password,
+            ssh_cidr=ssh_cidr,
         )
     except (ClientError, TimeoutError) as exc:
         raise click.ClickException(f"deploy failed: {exc}") from exc
@@ -217,20 +251,30 @@ def destroy() -> None:
 
 
 @aws_lightsail.command()
-def diff() -> None:
+@click.option(
+    "--ssh-cidr",
+    default=None,
+    metavar="CIDR",
+    help=_SSH_CIDR_HELP + " Pass the same value used on `deploy` to avoid false drift.",
+)
+def diff(ssh_cidr: str | None) -> None:
     """Show firewall rule drift between the desired and live configuration.
 
     There's no CloudFormation changeset here (deploy is direct boto3
     calls, not CDK), so this only diffs firewall rules against what
     `deploy` would set - it can't preview instance creation/destruction.
     """
+    if ssh_cidr is not None:
+        ssh_cidr = _parse_ssh_cidr(ssh_cidr)
     aws_lightsail_config = _load_config()
     current = describe_port_states(aws_lightsail_config.region)
     if current is None:
         click.echo("no instance deployed; run `wildtunnel aws-lightsail deploy` first")
         return
 
-    desired = port_infos(DEFAULT_SERVER_PORT, aws_lightsail_config.extra_port_range)
+    desired = port_infos(
+        DEFAULT_SERVER_PORT, aws_lightsail_config.extra_port_range, ssh_cidr=ssh_cidr
+    )
     to_open, to_close = diff_ports(desired, current)
     if not to_open and not to_close:
         click.echo("firewall rules are in sync (this only checks firewall rules)")

@@ -55,6 +55,30 @@ def test_port_infos_without_extra_range_opens_only_http_https_and_frp() -> None:
     assert not any(info["protocol"] == "udp" for info in infos)
 
 
+def test_port_infos_without_ssh_cidr_opens_ssh_to_browser_console_only() -> None:
+    infos = port_infos(7000, None)
+
+    assert {
+        "fromPort": 22,
+        "toPort": 22,
+        "protocol": "tcp",
+        "cidrs": [],
+        "cidrListAliases": ["lightsail-connect"],
+    } in infos
+
+
+def test_port_infos_with_ssh_cidr_also_opens_ssh_to_that_cidr() -> None:
+    infos = port_infos(7000, None, ssh_cidr="1.2.3.4/32")
+
+    assert {
+        "fromPort": 22,
+        "toPort": 22,
+        "protocol": "tcp",
+        "cidrs": ["1.2.3.4/32"],
+        "cidrListAliases": ["lightsail-connect"],
+    } in infos
+
+
 def test_port_infos_with_extra_range_opens_tcp_and_udp_for_that_range() -> None:
     infos = port_infos(7000, (24454, 25565))
 

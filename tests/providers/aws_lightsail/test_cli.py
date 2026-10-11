@@ -292,6 +292,69 @@ class TestDeploy:
         assert result.exit_code != 0
         assert "deploy failed" in result.output
 
+    def test_rejects_malformed_ssh_cidr(self, isolated_paths: Path) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["deploy", "--ssh-cidr", "not-a-cidr"],
+        )
+
+        assert result.exit_code != 0
+        assert "--ssh-cidr" in result.output
+
+    def test_rejects_ipv6_ssh_cidr(self, isolated_paths: Path) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["deploy", "--ssh-cidr", "::1/128"],
+        )
+
+        assert result.exit_code != 0
+        assert "--ssh-cidr" in result.output
+
+    def test_passes_ssh_cidr_through_to_deploy_instance(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        seen_cidrs: list[object] = []
+
+        def _fake_deploy(_config: object, _token: str, **kwargs: object) -> str:
+            seen_cidrs.append(kwargs["ssh_cidr"])
+            return "1.2.3.4"
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _fake_deploy)
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["deploy", "--ssh-cidr", "1.2.3.4/32"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen_cidrs == ["1.2.3.4/32"]
+
+    def test_defaults_ssh_cidr_to_none(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        seen_cidrs: list[object] = []
+
+        def _fake_deploy(_config: object, _token: str, **kwargs: object) -> str:
+            seen_cidrs.append(kwargs["ssh_cidr"])
+            return "1.2.3.4"
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _fake_deploy)
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code == 0, result.output
+        assert seen_cidrs == [None]
+
     def test_wraps_timeout_waiting_for_running_clearly(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -422,6 +485,14 @@ class TestDiff:
                     "state": "open",
                     "cidrs": ["0.0.0.0/0"],
                 },
+                {
+                    "fromPort": 22,
+                    "toPort": 22,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "cidrs": [],
+                    "cidrListAliases": ["lightsail-connect"],
+                },
             ],
         )
         runner = CliRunner()
@@ -444,6 +515,65 @@ class TestDiff:
 
         assert result.exit_code == 0, result.output
         assert "+ open tcp 80-80" in result.output
+
+    def test_rejects_malformed_ssh_cidr(self, isolated_paths: Path) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["diff", "--ssh-cidr", "not-a-cidr"],
+        )
+
+        assert result.exit_code != 0
+        assert "--ssh-cidr" in result.output
+
+    def test_shows_ssh_as_drift_when_ssh_cidr_given_but_not_open(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli,
+            "describe_port_states",
+            lambda _region: [
+                {
+                    "fromPort": 80,
+                    "toPort": 80,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+                {
+                    "fromPort": 443,
+                    "toPort": 443,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+                {
+                    "fromPort": 7000,
+                    "toPort": 7000,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+                {
+                    "fromPort": -1,
+                    "toPort": -1,
+                    "protocol": "icmp",
+                    "state": "open",
+                    "cidrs": ["0.0.0.0/0"],
+                },
+            ],
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail, ["diff", "--ssh-cidr", "1.2.3.4/32"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "+ open tcp 22-22" in result.output
 
 
 class TestInfo:

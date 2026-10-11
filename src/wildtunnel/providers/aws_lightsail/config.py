@@ -75,13 +75,22 @@ def availability_zone(region: str) -> str:
 
 
 def port_infos(
-    frp_bind_port: int, extra_port_range: tuple[int, int] | None
+    frp_bind_port: int,
+    extra_port_range: tuple[int, int] | None,
+    ssh_cidr: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build the full desired PutInstancePublicPorts portInfos list.
 
     PutInstancePublicPorts replaces the whole firewall rule set
     atomically, so this always returns the complete set rather than a
     diff - there's nothing to merge with what's already open.
+
+    SSH/22 is always scoped to the "lightsail-connect" cidrListAliases
+    entry, which Lightsail resolves to its own browser-based SSH
+    client's IPs - the browser console requires this rule to exist
+    (it isn't exempt from the firewall), but it's never opened to the
+    public internet by default. Pass ssh_cidr to additionally allow a
+    specific CIDR on the same port, for a real SSH client.
     """
     infos: list[dict[str, Any]] = [
         {"fromPort": 80, "toPort": 80, "protocol": "tcp", "cidrs": ["0.0.0.0/0"]},
@@ -93,6 +102,13 @@ def port_infos(
             "cidrs": ["0.0.0.0/0"],
         },
         {"fromPort": -1, "toPort": -1, "protocol": "icmp", "cidrs": ["0.0.0.0/0"]},
+        {
+            "fromPort": 22,
+            "toPort": 22,
+            "protocol": "tcp",
+            "cidrs": [ssh_cidr] if ssh_cidr is not None else [],
+            "cidrListAliases": ["lightsail-connect"],
+        },
     ]
     if extra_port_range is not None:
         start, end = extra_port_range
@@ -187,9 +203,10 @@ def diff_ports(
 
     Returns (to_open, to_close): desired rules not currently open, and
     currently-open rules that deploy would no longer set (e.g. after
-    shrinking or removing --extra-port-range). Only fromPort/toPort/
-    protocol are compared - cidrs are always 0.0.0.0/0 for every rule
-    this provider sets, so there's nothing else to diverge.
+    shrinking or removing --extra-port-range, or changing --ssh-cidr).
+    Only fromPort/toPort/protocol are compared, not cidrs - so a changed
+    --ssh-cidr value on an already-open SSH rule won't show as drift
+    here, even though `deploy` would still apply the new cidr.
     """
     open_keys = {_port_key(entry) for entry in current if entry.get("state") == "open"}
     desired_keys = {_port_key(entry) for entry in desired}
@@ -219,6 +236,7 @@ def deploy_instance(
     frp_stats_user: str,
     frp_stats_password: str,
     dashboard_admin_password: str,
+    ssh_cidr: str | None = None,
 ) -> str:
     """Create the instance and static IP if missing, then sync firewall rules.
 
@@ -261,7 +279,9 @@ def deploy_instance(
 
     client.put_instance_public_ports(
         instanceName=INSTANCE_NAME,
-        portInfos=port_infos(DEFAULT_SERVER_PORT, config.extra_port_range),
+        portInfos=port_infos(
+            DEFAULT_SERVER_PORT, config.extra_port_range, ssh_cidr=ssh_cidr
+        ),
     )
 
     static_ip: dict[str, Any] = client.get_static_ip(staticIpName=STATIC_IP_NAME)[

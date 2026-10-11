@@ -80,7 +80,9 @@ Lightsail instances cannot have an IAM role, so wildtunnel writes the frp token 
 wildtunnel aws-lightsail info
 ```
 
-Re-running `deploy` on a live instance only syncs the static IP and firewall rules (for example after changing `--extra-port-range`) — Lightsail cannot re-run cloud-init, so it never reinstalls frps/Caddy. Use `wildtunnel aws-lightsail diff` to check for firewall drift, or `destroy` + `deploy` to force a clean reinstall.
+Re-running `deploy` on a live instance only syncs the static IP and firewall rules (for example after changing `--extra-port-range` or `--ssh-cidr`) — Lightsail cannot re-run cloud-init, so it never reinstalls frps/Caddy. Use `wildtunnel aws-lightsail diff` to check for firewall drift, or `destroy` + `deploy` to force a clean reinstall.
+
+By default, `deploy` opens SSH (port 22) only to the Lightsail console's browser-based SSH client (the `lightsail-connect` firewall alias) — not to any public IP; Lightsail's browser SSH needs this rule to exist, it isn't exempt from the firewall. Pass `--ssh-cidr 1.2.3.4/32` (your current IP) to `deploy` or `diff` to additionally allow a regular SSH client; it's a one-shot flag, not saved to config, so a later `deploy`/`diff` without it closes client SSH again (browser-based SSH keeps working either way).
 
 ### Step 3: Point your DNS at the server address
 
