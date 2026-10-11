@@ -11,13 +11,6 @@ set -euxo pipefail
 : "${FRP_STATS_PASSWORD:?FRP_STATS_PASSWORD is required}"
 ALLOW_PORTS="${ALLOW_PORTS:-}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-8080}"
-# SMTP relay settings are optional: the dashboard's forgot-password email
-# flow only needs them once an admin has bound a recovery address, so
-# provisioning must not fail without them configured yet.
-SMTP_HOST="${SMTP_HOST:-}"
-SMTP_PORT="${SMTP_PORT:-}"
-SMTP_USERNAME="${SMTP_USERNAME:-}"
-SMTP_PASSWORD="${SMTP_PASSWORD:-}"
 # Generated client-side by the deploying CLI (mirroring frp_token) so it
 # can be printed to the console when `deploy` finishes. Optional: empty
 # means the dashboard falls back to generating its own random password.
@@ -131,10 +124,6 @@ Environment=DASHBOARD_SESSION_SECRET_FILE=${DASHBOARD_SESSION_SECRET_FILE}
 Environment=DASHBOARD_PORT=${DASHBOARD_PORT}
 Environment=FRP_STATS_USER=${FRP_STATS_USER}
 Environment=FRP_STATS_PASSWORD=${FRP_STATS_PASSWORD}
-Environment=SMTP_HOST=${SMTP_HOST}
-Environment=SMTP_PORT=${SMTP_PORT}
-Environment=SMTP_USERNAME=${SMTP_USERNAME}
-Environment=SMTP_PASSWORD=${SMTP_PASSWORD}
 Environment=DASHBOARD_INITIAL_ADMIN_PASSWORD=${DASHBOARD_INITIAL_ADMIN_PASSWORD}
 ExecStart=/opt/wildtunnel-dashboard/bin/python -m wildtunnel.dashboard.main
 Restart=always

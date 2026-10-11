@@ -208,26 +208,8 @@ def test_user_data_wrapper_exports_full_env_var_contract() -> None:
         "FRP_BIND_PORT",
         "FRP_VHOST_HTTP_PORT",
         "ALLOW_PORTS",
-        "SMTP_HOST",
-        "SMTP_PORT",
-        "SMTP_USERNAME",
-        "SMTP_PASSWORD",
     ):
         assert f"export {var}=" in user_data, f"missing export of {var}"
-
-
-def test_user_data_wrapper_embeds_configured_smtp_settings() -> None:
-    template = _build_template(
-        smtp_host="smtp.example.com",
-        smtp_port="587",
-        smtp_username="relay-user",
-        smtp_password="relay-pass",
-    )
-
-    user_data = _user_data(template)
-    assert "smtp.example.com" in user_data
-    assert "relay-user" in user_data
-    assert "relay-pass" in user_data
 
 
 def test_user_data_wrapper_embeds_frp_stats_credentials() -> None:

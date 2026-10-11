@@ -5,18 +5,7 @@ from fastapi.testclient import TestClient
 
 from wildtunnel.dashboard import db, egress
 from wildtunnel.dashboard.app import create_app
-from wildtunnel.dashboard.mailer import Mailer
 from wildtunnel.dashboard.stats import ProxyStats, StatsSource
-
-
-class FakeMailer(Mailer):
-    """Test double that records what would have been sent — no real SMTP."""
-
-    def __init__(self) -> None:
-        self.sent: list[tuple[str, str, str]] = []
-
-    def send(self, *, to: str, subject: str, body: str) -> None:
-        self.sent.append((to, subject, body))
 
 
 class _FakeStatsSource:
@@ -30,8 +19,6 @@ class _FakeStatsSource:
 def _client_with_admin(
     password: str = "bootstrap-pw",
     must_change_password: bool = True,
-    mailer: Mailer | None = None,
-    reset_token_ttl_seconds: float = 3600,
     stats_source: StatsSource | None = None,
 ) -> TestClient:
     conn = sqlite3.connect(":memory:", check_same_thread=False)
@@ -40,8 +27,6 @@ def _client_with_admin(
     app = create_app(
         conn,
         session_secret="test-secret",
-        mailer=mailer,
-        reset_token_ttl_seconds=reset_token_ttl_seconds,
         stats_source=stats_source or _FakeStatsSource([]),
     )
     return TestClient(app)
@@ -305,134 +290,6 @@ def test_full_change_password_succeeds_with_correct_current_password() -> None:
     assert new_login.status_code in (302, 303)
 
 
-def test_bind_recovery_email_redirects_unauthenticated_request_to_login() -> None:
-    client = _client_with_admin(password="correct-horse", must_change_password=False)
-
-    response = client.post(
-        "/account/email", data={"email": "admin@example.com"}, follow_redirects=False
-    )
-
-    assert response.status_code in (302, 303)
-    assert response.headers["location"] == "/login"
-
-
-def test_logged_in_admin_can_bind_recovery_email() -> None:
-    client = _client_with_admin(password="correct-horse", must_change_password=False)
-    client.post("/login", data={"password": "correct-horse"})
-
-    response = client.post(
-        "/account/email", data={"email": "admin@example.com"}, follow_redirects=False
-    )
-
-    assert response.status_code in (302, 303)
-
-
-def test_account_email_get_and_post_are_gated_behind_forced_password_change() -> None:
-    client = _client_with_admin(password="correct-horse", must_change_password=True)
-    client.post("/login", data={"password": "correct-horse"})
-
-    get_response = client.get("/account/email", follow_redirects=False)
-    assert get_response.status_code in (302, 303)
-    assert get_response.headers["location"] == "/change-password"
-
-    post_response = client.post(
-        "/account/email", data={"email": "admin@example.com"}, follow_redirects=False
-    )
-    assert post_response.status_code in (302, 303)
-    assert post_response.headers["location"] == "/change-password"
-
-
-def test_account_email_is_reachable_once_password_has_been_changed() -> None:
-    client = _client_with_admin(password="correct-horse", must_change_password=True)
-    client.post("/login", data={"password": "correct-horse"})
-    client.post("/change-password", data={"password": "new-password"})
-
-    response = client.post(
-        "/account/email", data={"email": "admin@example.com"}, follow_redirects=False
-    )
-
-    assert response.status_code in (302, 303)
-    assert response.headers["location"] == "/"
-
-
-def test_forgot_password_sends_reset_token_to_bound_email() -> None:
-    mailer = FakeMailer()
-    client = _client_with_admin(
-        password="correct-horse", must_change_password=False, mailer=mailer
-    )
-    client.post("/login", data={"password": "correct-horse"})
-    client.post("/account/email", data={"email": "admin@example.com"})
-
-    fresh_client = TestClient(client.app)
-    response = fresh_client.post(
-        "/forgot-password", data={"email": "admin@example.com"}
-    )
-
-    assert response.status_code == 200
-    assert len(mailer.sent) == 1
-    to, _subject, body = mailer.sent[0]
-    assert to == "admin@example.com"
-    assert body  # contains the reset token/link
-
-
-def test_forgot_password_with_unbound_email_sends_nothing_but_still_succeeds() -> None:
-    mailer = FakeMailer()
-    client = _client_with_admin(
-        password="correct-horse", must_change_password=False, mailer=mailer
-    )
-
-    response = client.post("/forgot-password", data={"email": "nobody@example.com"})
-
-    assert response.status_code == 200
-    assert mailer.sent == []
-
-
-def test_reset_password_with_valid_token_sets_new_password() -> None:
-    mailer = FakeMailer()
-    client = _client_with_admin(
-        password="correct-horse", must_change_password=False, mailer=mailer
-    )
-    client.post("/login", data={"password": "correct-horse"})
-    client.post("/account/email", data={"email": "admin@example.com"})
-    client.post("/forgot-password", data={"email": "admin@example.com"})
-    _to, _subject, body = mailer.sent[0]
-    token = body.strip().rsplit(" ", 1)[-1]
-
-    response = client.post(
-        "/reset-password",
-        data={"token": token, "password": "reset-password-123"},
-        follow_redirects=False,
-    )
-    assert response.status_code in (302, 303)
-
-    fresh_client = TestClient(client.app)
-    old_login = fresh_client.post("/login", data={"password": "correct-horse"})
-    assert old_login.status_code == 401
-    new_login = fresh_client.post(
-        "/login", data={"password": "reset-password-123"}, follow_redirects=False
-    )
-    assert new_login.status_code in (302, 303)
-
-
-def test_reset_password_rejects_already_used_token() -> None:
-    mailer = FakeMailer()
-    client = _client_with_admin(
-        password="correct-horse", must_change_password=False, mailer=mailer
-    )
-    client.post("/login", data={"password": "correct-horse"})
-    client.post("/account/email", data={"email": "admin@example.com"})
-    client.post("/forgot-password", data={"email": "admin@example.com"})
-    _to, _subject, body = mailer.sent[0]
-    token = body.strip().rsplit(" ", 1)[-1]
-    client.post("/reset-password", data={"token": token, "password": "first-reset"})
-
-    response = client.post(
-        "/reset-password", data={"token": token, "password": "second-reset"}
-    )
-
-    assert response.status_code == 400
-
-
 def test_root_renders_links_to_other_pages_once_unlocked() -> None:
     client = _client_with_admin(password="correct-horse", must_change_password=False)
     client.post("/login", data={"password": "correct-horse"})
@@ -442,7 +299,6 @@ def test_root_renders_links_to_other_pages_once_unlocked() -> None:
     assert response.status_code == 200
     assert "/stats" in response.text
     assert "/egress" in response.text
-    assert "/account/email" in response.text
     assert "/logout" in response.text
 
 
@@ -457,24 +313,3 @@ def test_logout_clears_session_so_subsequent_requests_are_unauthenticated() -> N
     response = client.get("/", follow_redirects=False)
     assert response.status_code in (302, 303)
     assert response.headers["location"] == "/login"
-
-
-def test_reset_password_rejects_expired_token() -> None:
-    mailer = FakeMailer()
-    client = _client_with_admin(
-        password="correct-horse",
-        must_change_password=False,
-        mailer=mailer,
-        reset_token_ttl_seconds=-1,
-    )
-    client.post("/login", data={"password": "correct-horse"})
-    client.post("/account/email", data={"email": "admin@example.com"})
-    client.post("/forgot-password", data={"email": "admin@example.com"})
-    _to, _subject, body = mailer.sent[0]
-    token = body.strip().rsplit(" ", 1)[-1]
-
-    response = client.post(
-        "/reset-password", data={"token": token, "password": "new-password"}
-    )
-
-    assert response.status_code == 400

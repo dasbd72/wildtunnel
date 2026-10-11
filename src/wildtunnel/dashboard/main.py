@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from wildtunnel.dashboard import db
 from wildtunnel.dashboard.app import create_app
 from wildtunnel.dashboard.bootstrap import ensure_bootstrapped
-from wildtunnel.dashboard.mailer import Mailer, SmtpConfig, SmtpMailer
 from wildtunnel.dashboard.stats import DEFAULT_STATS_BASE_URL, FrpsStatsSource
 
 _DEFAULT_PORT = 8080
@@ -18,26 +17,6 @@ _DEFAULT_EGRESS_SAMPLE_INTERVAL_SECONDS = 300.0
 
 def _env_path(name: str) -> Path:
     return Path(os.environ[name])
-
-
-def _build_mailer() -> Mailer | None:
-    """Build a generic-SMTP Mailer from SMTP_* env vars, if configured.
-
-    SMTP_HOST unset means the forgot-password flow isn't wired up yet
-    (e.g. before an operator has a relay to point at), so None is a
-    normal, expected result here, not an error.
-    """
-    host = os.environ.get("SMTP_HOST", "")
-    if not host:
-        return None
-    return SmtpMailer(
-        SmtpConfig(
-            host=host,
-            port=int(os.environ.get("SMTP_PORT") or 587),
-            username=os.environ.get("SMTP_USERNAME") or None,
-            password=os.environ.get("SMTP_PASSWORD") or None,
-        )
-    )
 
 
 def build_app() -> FastAPI:
@@ -78,7 +57,6 @@ def build_app() -> FastAPI:
         username=os.environ.get("FRP_STATS_USER", ""),
         password=os.environ.get("FRP_STATS_PASSWORD", ""),
     )
-    mailer = _build_mailer()
     egress_sample_interval_seconds = float(
         os.environ.get("EGRESS_SAMPLE_INTERVAL_SECONDS")
         or _DEFAULT_EGRESS_SAMPLE_INTERVAL_SECONDS
@@ -87,7 +65,6 @@ def build_app() -> FastAPI:
         conn,
         session_secret=session_secret,
         stats_source=stats_source,
-        mailer=mailer,
         egress_sample_interval_seconds=egress_sample_interval_seconds,
     )
 

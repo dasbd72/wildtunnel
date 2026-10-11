@@ -92,28 +92,6 @@ def test_render_user_data_embeds_token_domain_and_server_setup_script() -> None:
     assert not re.search(r"__[A-Z_]+__", script)  # no leftover placeholders
 
 
-def test_render_user_data_embeds_configured_smtp_settings() -> None:
-    script = render_user_data(
-        domain="example.com",
-        frp_token="s3cret-token",
-        frp_bind_port=7000,
-        frp_vhost_http_port=7080,
-        frp_version="0.71.0",
-        caddy_version="2.9.1",
-        extra_port_range=None,
-        smtp_host="smtp.example.com",
-        smtp_port="587",
-        smtp_username="relay-user",
-        smtp_password="relay-pass",
-    )
-
-    assert 'SMTP_HOST="smtp.example.com"' in script
-    assert 'SMTP_PORT="587"' in script
-    assert 'SMTP_USERNAME="relay-user"' in script
-    assert 'SMTP_PASSWORD="relay-pass"' in script
-    assert not re.search(r"__[A-Z_]+__", script)
-
-
 def test_render_user_data_embeds_frp_stats_credentials() -> None:
     script = render_user_data(
         domain="example.com",

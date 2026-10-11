@@ -124,6 +124,27 @@ wildtunnel frpc render \
   --token <token>
 ```
 
+## Dashboard
+
+Each provider installs an admin dashboard with frps and Caddy. The dashboard address is `wildtunnel.<domain>`. The VPS binds the dashboard to the loopback address. Caddy makes the dashboard reachable over TLS.
+
+The `deploy` command creates the admin password on your machine. The command prints the password one time:
+
+```sh
+wildtunnel aws-lightsail deploy
+# deployed; static IP: 1.2.3.4
+# dashboard admin password: <generated password>
+```
+
+Log in with that password. The dashboard then prompts you to set a new password.
+
+The dashboard has these pages:
+
+- **Live stats** (`/stats`): Shows the current connection count and today's traffic for each tunnel. The dashboard reads this data directly from frps.
+- **Egress history** (`/egress`): Shows day, week, and month totals for each tunnel. The dashboard samples the data every 5 minutes. The totals stay correct after you restart frps.
+
+If you open a dashboard page before you log in, the dashboard sends you to `/login`.
+
 ## Upgrade from aws-reverse-tunnel
 
 This project was renamed from `aws-reverse-tunnel` to `wildtunnel`. There is no automatic migration. To keep your existing configuration, move the config directory by hand:
@@ -182,6 +203,7 @@ uv run python scripts/new_provider.py hetzner
 
 - The CDK app creates the frp token, so the plaintext token ends up in the generated CloudFormation template. AWS stores it as a SecureString, but a person with read access to the stack can still see it. Acceptable for this personal, single-account setup.
 - Lightsail instances cannot have an IAM role, so wildtunnel writes the frp token directly into the instance's user data instead of fetching it from SSM. A person who can call `lightsail:GetInstance` can see it there. Also, `wildtunnel aws-lightsail info` only works on the machine that ran `deploy`, since the token is never stored remotely.
+- The `aws-lightsail destroy` command releases the static IP address. The next `deploy` command gets a new static IP address. After a destroy and deploy, you must update your DNS records by hand.
 
 ## License
 

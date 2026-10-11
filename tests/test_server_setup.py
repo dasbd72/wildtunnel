@@ -20,10 +20,6 @@ _ENV_VAR_CONTRACT = (
     "FRP_STATS_USER",
     "FRP_STATS_PASSWORD",
     "DASHBOARD_PORT",
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_USERNAME",
-    "SMTP_PASSWORD",
 )
 
 
@@ -43,16 +39,6 @@ def test_has_no_textual_placeholders() -> None:
     # The generic installer takes its inputs as env vars, not
     # synth-time string substitution — no leftover __PLACEHOLDER__ tokens.
     assert "__" not in _SCRIPT
-
-
-def test_dashboard_service_receives_smtp_settings() -> None:
-    # The dashboard's forgot-password email flow reads its generic SMTP
-    # relay config from the same systemd unit as its other settings, the
-    # same way FRP_STATS_USER/PASSWORD are threaded today.
-    assert "Environment=SMTP_HOST=${SMTP_HOST}" in _SCRIPT
-    assert "Environment=SMTP_PORT=${SMTP_PORT}" in _SCRIPT
-    assert "Environment=SMTP_USERNAME=${SMTP_USERNAME}" in _SCRIPT
-    assert "Environment=SMTP_PASSWORD=${SMTP_PASSWORD}" in _SCRIPT
 
 
 def test_dashboard_service_receives_initial_admin_password() -> None:
