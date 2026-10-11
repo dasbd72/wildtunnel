@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from wildtunnel.dashboard import db
 from wildtunnel.dashboard.app import create_app
 from wildtunnel.dashboard.mailer import Mailer
+from wildtunnel.dashboard.stats import ProxyStats, StatsSource
 
 
 class FakeMailer(Mailer):
@@ -17,11 +18,20 @@ class FakeMailer(Mailer):
         self.sent.append((to, subject, body))
 
 
+class _FakeStatsSource:
+    def __init__(self, stats: list[ProxyStats]) -> None:
+        self._stats = stats
+
+    def current_stats(self) -> list[ProxyStats]:
+        return self._stats
+
+
 def _client_with_admin(
     password: str = "bootstrap-pw",
     must_change_password: bool = True,
     mailer: Mailer | None = None,
     reset_token_ttl_seconds: float = 3600,
+    stats_source: StatsSource | None = None,
 ) -> TestClient:
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     db.init_schema(conn)
@@ -31,6 +41,7 @@ def _client_with_admin(
         session_secret="test-secret",
         mailer=mailer,
         reset_token_ttl_seconds=reset_token_ttl_seconds,
+        stats_source=stats_source or _FakeStatsSource([]),
     )
     return TestClient(app)
 
@@ -120,6 +131,34 @@ def test_missing_session_cookie_is_rejected_on_a_fresh_client() -> None:
     response = fresh_client.get("/", follow_redirects=False)
 
     assert response.status_code == 401
+
+
+def test_stats_rejects_unauthenticated_request() -> None:
+    client = _client_with_admin()
+
+    response = client.get("/stats", follow_redirects=False)
+
+    assert response.status_code == 401
+
+
+def test_stats_shows_per_tunnel_connections_and_bandwidth_when_authenticated() -> None:
+    stats_source = _FakeStatsSource(
+        [ProxyStats(name="home-ssh", connections=3, bytes_in=1024, bytes_out=2048)]
+    )
+    client = _client_with_admin(
+        password="correct-horse",
+        must_change_password=False,
+        stats_source=stats_source,
+    )
+    client.post("/login", data={"password": "correct-horse"})
+
+    response = client.get("/stats")
+
+    assert response.status_code == 200
+    assert "home-ssh" in response.text
+    assert "3" in response.text
+    assert "1024" in response.text
+    assert "2048" in response.text
 
 
 def test_tampered_session_cookie_is_rejected() -> None:

@@ -7,7 +7,10 @@ set -euxo pipefail
 : "${CADDY_VERSION:?CADDY_VERSION is required}"
 : "${FRP_BIND_PORT:?FRP_BIND_PORT is required}"
 : "${FRP_VHOST_HTTP_PORT:?FRP_VHOST_HTTP_PORT is required}"
+: "${FRP_STATS_USER:?FRP_STATS_USER is required}"
+: "${FRP_STATS_PASSWORD:?FRP_STATS_PASSWORD is required}"
 ALLOW_PORTS="${ALLOW_PORTS:-}"
+DASHBOARD_PORT="${DASHBOARD_PORT:-8080}"
 # SMTP relay settings are optional: the dashboard's forgot-password email
 # flow only needs them once an admin has bound a recovery address, so
 # provisioning must not fail without them configured yet.
@@ -50,6 +53,14 @@ bindPort = ${FRP_BIND_PORT}
 auth.method = "token"
 auth.token = "${FRP_TOKEN}"
 vhostHTTPPort = ${FRP_VHOST_HTTP_PORT}
+# Stats API for the wildtunnel dashboard (StatsSource) to poll per-tunnel
+# connection counts and traffic. Bound to loopback only - never exposed
+# to the internet - and gated by basic auth so a local process can't
+# read it without credentials.
+webServer.addr = "127.0.0.1"
+webServer.port = 7500
+webServer.user = "${FRP_STATS_USER}"
+webServer.password = "${FRP_STATS_PASSWORD}"
 EOF
 if [[ -n "${ALLOW_PORTS}" ]]; then
   echo "${ALLOW_PORTS}" >> /opt/frp/frps.toml
@@ -72,6 +83,62 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now frps
+
+# --- wildtunnel dashboard (login-gated admin UI, bound to loopback only;
+# reached solely via Caddy below, so no new security-group/firewall port
+# is needed) ---
+#
+# frps/caddy ship as prebuilt release binaries, but there's no such
+# release for wildtunnel's dashboard extra, so it's installed the normal
+# Python way: a venv plus `pip install` from PyPI. python3/pip3 ship in
+# Amazon Linux 2023's base repos.
+dnf install -y python3 python3-pip
+python3 -m venv /opt/wildtunnel-dashboard
+/opt/wildtunnel-dashboard/bin/pip install --upgrade pip
+/opt/wildtunnel-dashboard/bin/pip install "wildtunnel[dashboard]"
+
+mkdir -p /var/lib/wildtunnel-dashboard
+chmod 700 /var/lib/wildtunnel-dashboard
+
+# The session-signing secret is generated once and persisted across
+# restarts/reprovisions (regenerating it would silently log out every
+# admin session); the bootstrap admin password, by contrast, is handled
+# by wildtunnel.dashboard.bootstrap.ensure_bootstrapped itself, which
+# already only writes it once.
+DASHBOARD_SESSION_SECRET_FILE=/var/lib/wildtunnel-dashboard/session-secret
+if [[ ! -f "${DASHBOARD_SESSION_SECRET_FILE}" ]]; then
+  ( umask 077 && /opt/wildtunnel-dashboard/bin/python -c \
+    'import secrets; print(secrets.token_hex(32))' \
+    > "${DASHBOARD_SESSION_SECRET_FILE}" )
+fi
+chmod 600 "${DASHBOARD_SESSION_SECRET_FILE}"
+
+cat > /etc/systemd/system/wildtunnel-dashboard.service <<EOF
+[Unit]
+Description=wildtunnel dashboard
+After=network.target
+
+[Service]
+Environment=DASHBOARD_DB_PATH=/var/lib/wildtunnel-dashboard/dashboard.db
+Environment=DASHBOARD_SECRET_FILE=/var/lib/wildtunnel-dashboard/admin-password.txt
+Environment=DASHBOARD_SESSION_SECRET_FILE=${DASHBOARD_SESSION_SECRET_FILE}
+Environment=DASHBOARD_PORT=${DASHBOARD_PORT}
+Environment=FRP_STATS_USER=${FRP_STATS_USER}
+Environment=FRP_STATS_PASSWORD=${FRP_STATS_PASSWORD}
+Environment=SMTP_HOST=${SMTP_HOST}
+Environment=SMTP_PORT=${SMTP_PORT}
+Environment=SMTP_USERNAME=${SMTP_USERNAME}
+Environment=SMTP_PASSWORD=${SMTP_PASSWORD}
+ExecStart=/opt/wildtunnel-dashboard/bin/python -m wildtunnel.dashboard.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now wildtunnel-dashboard
 
 # --- caddy (reverse proxy + TLS termination) ---
 curl -fsSL -o /tmp/caddy.tar.gz \
@@ -108,11 +175,22 @@ ${CADDY_ASK_ADDR} {
     respond /ask 200
 }
 
+wildtunnel.${DOMAIN} {
+    tls {
+        on_demand
+    }
+    reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
+}
+
 *.${DOMAIN} {
     tls {
         on_demand
     }
     reverse_proxy 127.0.0.1:${FRP_VHOST_HTTP_PORT}
+}
+
+http://wildtunnel.${DOMAIN} {
+    redir https://{host}{uri} permanent
 }
 
 http://*.${DOMAIN} {
@@ -137,17 +215,3 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now caddy
-
-# --- dashboard SMTP relay settings ---
-# The dashboard's change-password/forgot-password service (not started by
-# this script) reads its generic SMTP relay config from this env file.
-# Written unconditionally (even when empty) so a later dashboard unit has
-# a stable path to source regardless of whether SMTP is configured yet.
-mkdir -p /etc/wildtunnel
-cat > /etc/wildtunnel/dashboard.env <<EOF
-SMTP_HOST=${SMTP_HOST}
-SMTP_PORT=${SMTP_PORT}
-SMTP_USERNAME=${SMTP_USERNAME}
-SMTP_PASSWORD=${SMTP_PASSWORD}
-EOF
-chmod 600 /etc/wildtunnel/dashboard.env
