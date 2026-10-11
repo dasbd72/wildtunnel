@@ -73,9 +73,9 @@ class FrpsStatsSource:
         return [
             ProxyStats(
                 name=proxy["name"],
-                connections=proxy.get("cur_conns", 0),
-                bytes_in=proxy.get("today_traffic_in", 0),
-                bytes_out=proxy.get("today_traffic_out", 0),
+                connections=proxy.get("curConns", 0),
+                bytes_in=proxy.get("todayTrafficIn", 0),
+                bytes_out=proxy.get("todayTrafficOut", 0),
             )
             for proxy in body.get("proxies", [])
         ]
