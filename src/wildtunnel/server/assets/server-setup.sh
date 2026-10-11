@@ -10,6 +10,7 @@ set -euxo pipefail
 : "${FRP_STATS_USER:?FRP_STATS_USER is required}"
 : "${FRP_STATS_PASSWORD:?FRP_STATS_PASSWORD is required}"
 ALLOW_PORTS="${ALLOW_PORTS:-}"
+DASHBOARD_PORT="${DASHBOARD_PORT:-8080}"
 
 # Provider-agnostic: this box may be ARM (EC2 Graviton) or x86_64
 # (Lightsail has no ARM bundles), so the frp/caddy release asset arch
@@ -76,6 +77,58 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now frps
 
+# --- wildtunnel dashboard (login-gated admin UI, bound to loopback only;
+# reached solely via Caddy below, so no new security-group/firewall port
+# is needed) ---
+#
+# frps/caddy ship as prebuilt release binaries, but there's no such
+# release for wildtunnel's dashboard extra, so it's installed the normal
+# Python way: a venv plus `pip install` from PyPI. python3/pip3 ship in
+# Amazon Linux 2023's base repos.
+dnf install -y python3 python3-pip
+python3 -m venv /opt/wildtunnel-dashboard
+/opt/wildtunnel-dashboard/bin/pip install --upgrade pip
+/opt/wildtunnel-dashboard/bin/pip install "wildtunnel[dashboard]"
+
+mkdir -p /var/lib/wildtunnel-dashboard
+chmod 700 /var/lib/wildtunnel-dashboard
+
+# The session-signing secret is generated once and persisted across
+# restarts/reprovisions (regenerating it would silently log out every
+# admin session); the bootstrap admin password, by contrast, is handled
+# by wildtunnel.dashboard.bootstrap.ensure_bootstrapped itself, which
+# already only writes it once.
+DASHBOARD_SESSION_SECRET_FILE=/var/lib/wildtunnel-dashboard/session-secret
+if [[ ! -f "${DASHBOARD_SESSION_SECRET_FILE}" ]]; then
+  ( umask 077 && /opt/wildtunnel-dashboard/bin/python -c \
+    'import secrets; print(secrets.token_hex(32))' \
+    > "${DASHBOARD_SESSION_SECRET_FILE}" )
+fi
+chmod 600 "${DASHBOARD_SESSION_SECRET_FILE}"
+
+cat > /etc/systemd/system/wildtunnel-dashboard.service <<EOF
+[Unit]
+Description=wildtunnel dashboard
+After=network.target
+
+[Service]
+Environment=DASHBOARD_DB_PATH=/var/lib/wildtunnel-dashboard/dashboard.db
+Environment=DASHBOARD_SECRET_FILE=/var/lib/wildtunnel-dashboard/admin-password.txt
+Environment=DASHBOARD_SESSION_SECRET_FILE=${DASHBOARD_SESSION_SECRET_FILE}
+Environment=DASHBOARD_PORT=${DASHBOARD_PORT}
+Environment=FRP_STATS_USER=${FRP_STATS_USER}
+Environment=FRP_STATS_PASSWORD=${FRP_STATS_PASSWORD}
+ExecStart=/opt/wildtunnel-dashboard/bin/python -m wildtunnel.dashboard.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now wildtunnel-dashboard
+
 # --- caddy (reverse proxy + TLS termination) ---
 curl -fsSL -o /tmp/caddy.tar.gz \
   "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
@@ -111,11 +164,22 @@ ${CADDY_ASK_ADDR} {
     respond /ask 200
 }
 
+wildtunnel.${DOMAIN} {
+    tls {
+        on_demand
+    }
+    reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
+}
+
 *.${DOMAIN} {
     tls {
         on_demand
     }
     reverse_proxy 127.0.0.1:${FRP_VHOST_HTTP_PORT}
+}
+
+http://wildtunnel.${DOMAIN} {
+    redir https://{host}{uri} permanent
 }
 
 http://*.${DOMAIN} {

@@ -19,6 +19,7 @@ _ENV_VAR_CONTRACT = (
     "ALLOW_PORTS",
     "FRP_STATS_USER",
     "FRP_STATS_PASSWORD",
+    "DASHBOARD_PORT",
 )
 
 
@@ -62,3 +63,36 @@ def test_webserver_stats_require_basic_auth_credentials() -> None:
     assert "webServer.password" in _SCRIPT
     assert "${FRP_STATS_USER}" in _SCRIPT
     assert "${FRP_STATS_PASSWORD}" in _SCRIPT
+
+
+def test_installs_and_enables_dashboard_systemd_service() -> None:
+    assert "wildtunnel-dashboard.service" in _SCRIPT
+    assert "wildtunnel[dashboard]" in _SCRIPT
+    assert "systemctl enable --now wildtunnel-dashboard" in _SCRIPT
+
+
+def test_dashboard_binds_loopback_only() -> None:
+    # No new security-group/firewall port is opened for the dashboard -
+    # it must only ever be reachable via Caddy on 127.0.0.1.
+    assert "127.0.0.1:${DASHBOARD_PORT}" in _SCRIPT
+    assert "0.0.0.0:${DASHBOARD_PORT}" not in _SCRIPT
+
+
+def test_dashboard_bootstraps_admin_before_serving() -> None:
+    # The plaintext bootstrap password secret file must exist before the
+    # app starts accepting requests (see dashboard.bootstrap.ensure_bootstrapped).
+    assert "wildtunnel.dashboard.main" in _SCRIPT
+
+
+def test_caddyfile_routes_wildtunnel_subdomain_to_dashboard_ahead_of_wildcard() -> None:
+    caddyfile_start = _SCRIPT.index("cat > /etc/caddy/Caddyfile")
+    wildcard_start = _SCRIPT.index("*.${DOMAIN} {", caddyfile_start)
+    dashboard_start = _SCRIPT.index("wildtunnel.${DOMAIN} {", caddyfile_start)
+
+    assert dashboard_start < wildcard_start, (
+        "the host-matched wildtunnel.${DOMAIN} block must come before the "
+        "*.${DOMAIN} wildcard block so Caddy prefers the specific match"
+    )
+    dashboard_block = _SCRIPT[dashboard_start:wildcard_start]
+    assert "on_demand" in dashboard_block
+    assert "reverse_proxy 127.0.0.1:${DASHBOARD_PORT}" in dashboard_block
