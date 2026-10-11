@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 from ...frpc_config import DEFAULT_SERVER_PORT
 from ...paths import (
     AWS_LIGHTSAIL_CONFIG_FILE,
+    DASHBOARD_ADMIN_PASSWORD_FILE,
     FRP_STATS_PASSWORD_FILE,
     FRP_TOKEN_FILE,
     other_provider,
@@ -79,6 +80,20 @@ def _get_or_create_frp_stats_password() -> str:
     FRP_STATS_PASSWORD_FILE.parent.mkdir(parents=True, exist_ok=True)
     FRP_STATS_PASSWORD_FILE.write_text(password)
     FRP_STATS_PASSWORD_FILE.chmod(0o600)
+    return password
+
+
+def _get_or_create_dashboard_admin_password() -> str:
+    # Same reasoning as _get_or_create_frp_token: cached so re-deploys
+    # don't rotate it. Generated client-side (rather than letting the
+    # dashboard pick its own random one on first boot) so `deploy` can
+    # print it to the console once provisioning is kicked off.
+    if DASHBOARD_ADMIN_PASSWORD_FILE.exists():
+        return DASHBOARD_ADMIN_PASSWORD_FILE.read_text().strip()
+    password = secrets.token_urlsafe(24)
+    DASHBOARD_ADMIN_PASSWORD_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DASHBOARD_ADMIN_PASSWORD_FILE.write_text(password)
+    DASHBOARD_ADMIN_PASSWORD_FILE.chmod(0o600)
     return password
 
 
@@ -175,16 +190,19 @@ def deploy() -> None:
     """
     aws_lightsail_config = _load_config()
     token = _get_or_create_frp_token()
+    admin_password = _get_or_create_dashboard_admin_password()
     try:
         public_ip = deploy_instance(
             aws_lightsail_config,
             token,
             frp_stats_user=FRP_STATS_USER,
             frp_stats_password=_get_or_create_frp_stats_password(),
+            dashboard_admin_password=admin_password,
         )
     except (ClientError, TimeoutError) as exc:
         raise click.ClickException(f"deploy failed: {exc}") from exc
     click.echo(f"deployed; static IP: {public_ip}")
+    click.echo(f"dashboard admin password: {admin_password}")
 
 
 @aws_lightsail.command()

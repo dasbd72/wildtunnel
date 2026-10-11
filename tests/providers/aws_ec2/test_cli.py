@@ -13,6 +13,11 @@ from wildtunnel.providers.aws_ec2.config import AwsEc2Config
 def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(aws_ec2_cli, "AWS_EC2_CONFIG_FILE", tmp_path / "config.json")
     monkeypatch.setattr(aws_ec2_cli, "AWS_EC2_CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(
+        aws_ec2_cli,
+        "DASHBOARD_ADMIN_PASSWORD_FILE",
+        tmp_path / "dashboard-admin-password",
+    )
     return tmp_path
 
 
@@ -315,6 +320,24 @@ class TestDeployDestroyDiff:
         assert result.exit_code == 0, result.output
         call_args = " ".join(fake_collaborators["subprocess_calls"][0]["args"])
         assert "extraPortRange" not in call_args
+
+    def test_deploy_prints_the_admin_password_written_by_the_cdk_subprocess(
+        self, isolated_paths: Path, fake_collaborators: dict
+    ) -> None:
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
+        # The real `cdk deploy` subprocess (app.py) generates and caches
+        # this file as a side effect; the fake subprocess here doesn't
+        # actually run app.py, so seed the file the same way it would.
+        aws_ec2_cli.DASHBOARD_ADMIN_PASSWORD_FILE.parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        aws_ec2_cli.DASHBOARD_ADMIN_PASSWORD_FILE.write_text("generated-admin-pw")
+        runner = CliRunner()
+
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
+
+        assert result.exit_code == 0, result.output
+        assert "generated-admin-pw" in result.output
 
     def test_deploy_fails_cleanly_when_cdk_subprocess_fails(
         self,

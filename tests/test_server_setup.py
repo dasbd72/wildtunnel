@@ -55,6 +55,17 @@ def test_dashboard_service_receives_smtp_settings() -> None:
     assert "Environment=SMTP_PASSWORD=${SMTP_PASSWORD}" in _SCRIPT
 
 
+def test_dashboard_service_receives_initial_admin_password() -> None:
+    # Generated client-side by the deploying CLI (mirroring frp_token) so
+    # it can be printed to the console when `deploy` finishes. Empty is a
+    # valid, supported value - no `:?` required-check, since the dashboard
+    # falls back to generating its own random password when unset.
+    assert (
+        "Environment=DASHBOARD_INITIAL_ADMIN_PASSWORD=${DASHBOARD_INITIAL_ADMIN_PASSWORD}"
+        in _SCRIPT
+    )
+
+
 def test_detects_cpu_architecture_instead_of_hardcoding_it() -> None:
     # This box may be ARM (EC2 Graviton) or x86_64 (Lightsail has no ARM
     # bundles) — the frp/caddy release asset arch must be detected at

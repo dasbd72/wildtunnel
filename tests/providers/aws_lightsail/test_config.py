@@ -132,6 +132,22 @@ def test_render_user_data_embeds_frp_stats_credentials() -> None:
     assert not re.search(r"__[A-Z_]+__", script)
 
 
+def test_render_user_data_embeds_dashboard_admin_password() -> None:
+    script = render_user_data(
+        domain="example.com",
+        frp_token="s3cret-token",
+        frp_bind_port=7000,
+        frp_vhost_http_port=7080,
+        frp_version="0.71.0",
+        caddy_version="2.9.1",
+        extra_port_range=None,
+        dashboard_admin_password="s3cret-admin-pass",
+    )
+
+    assert 'DASHBOARD_INITIAL_ADMIN_PASSWORD="s3cret-admin-pass"' in script
+    assert not re.search(r"__[A-Z_]+__", script)
+
+
 def test_render_user_data_sets_allow_ports_when_extra_range_given() -> None:
     script = render_user_data(
         domain="example.com",

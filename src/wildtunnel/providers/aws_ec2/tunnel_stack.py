@@ -45,6 +45,7 @@ class TunnelStack(Stack):
         smtp_password: str = "",
         frp_stats_user: str = "",
         frp_stats_password: str = "",
+        dashboard_admin_password: str = "",
         **kwargs: Any,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -158,6 +159,7 @@ class TunnelStack(Stack):
             "__SMTP_PASSWORD__": smtp_password,
             "__FRP_STATS_USER__": frp_stats_user,
             "__FRP_STATS_PASSWORD__": frp_stats_password,
+            "__DASHBOARD_ADMIN_PASSWORD__": dashboard_admin_password,
             "__SERVER_SETUP_SCRIPT__": _SERVER_SETUP_SCRIPT.read_text(),
         }.items():
             script = script.replace(placeholder, value)

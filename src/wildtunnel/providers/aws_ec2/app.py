@@ -5,7 +5,11 @@ import secrets
 
 import aws_cdk as cdk
 
-from ...paths import FRP_STATS_PASSWORD_FILE, FRP_TOKEN_FILE
+from ...paths import (
+    DASHBOARD_ADMIN_PASSWORD_FILE,
+    FRP_STATS_PASSWORD_FILE,
+    FRP_TOKEN_FILE,
+)
 from .config import STACK_NAME
 from .tunnel_stack import TunnelStack
 
@@ -36,6 +40,20 @@ def _get_or_create_frp_stats_password() -> str:
     FRP_STATS_PASSWORD_FILE.parent.mkdir(parents=True, exist_ok=True)
     FRP_STATS_PASSWORD_FILE.write_text(password)
     FRP_STATS_PASSWORD_FILE.chmod(0o600)
+    return password
+
+
+def _get_or_create_dashboard_admin_password() -> str:
+    # Same reasoning as _get_or_create_frp_token: cached so re-deploys
+    # don't rotate it. Generated client-side (rather than letting the
+    # dashboard pick its own random one on first boot) so `deploy` can
+    # print it to the console once provisioning is kicked off.
+    if DASHBOARD_ADMIN_PASSWORD_FILE.exists():
+        return DASHBOARD_ADMIN_PASSWORD_FILE.read_text().strip()
+    password = secrets.token_urlsafe(24)
+    DASHBOARD_ADMIN_PASSWORD_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DASHBOARD_ADMIN_PASSWORD_FILE.write_text(password)
+    DASHBOARD_ADMIN_PASSWORD_FILE.chmod(0o600)
     return password
 
 
@@ -103,6 +121,7 @@ TunnelStack(
     extra_port_range=extra_port_range,
     frp_stats_user=FRP_STATS_USER,
     frp_stats_password=_get_or_create_frp_stats_password(),
+    dashboard_admin_password=_get_or_create_dashboard_admin_password(),
 )
 
 app.synth()

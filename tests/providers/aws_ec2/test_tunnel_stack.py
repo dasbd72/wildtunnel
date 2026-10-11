@@ -241,6 +241,13 @@ def test_user_data_wrapper_embeds_frp_stats_credentials() -> None:
     assert 'FRP_STATS_PASSWORD="s3cret-stats-pass"' in user_data
 
 
+def test_user_data_wrapper_embeds_dashboard_admin_password() -> None:
+    template = _build_template(dashboard_admin_password="s3cret-admin-pass")
+
+    user_data = _user_data(template)
+    assert 'DASHBOARD_INITIAL_ADMIN_PASSWORD="s3cret-admin-pass"' in user_data
+
+
 def test_user_data_wrapper_retries_ssm_token_fetch() -> None:
     template = _build_template()
 

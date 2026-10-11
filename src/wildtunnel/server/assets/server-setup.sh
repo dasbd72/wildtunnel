@@ -18,6 +18,10 @@ SMTP_HOST="${SMTP_HOST:-}"
 SMTP_PORT="${SMTP_PORT:-}"
 SMTP_USERNAME="${SMTP_USERNAME:-}"
 SMTP_PASSWORD="${SMTP_PASSWORD:-}"
+# Generated client-side by the deploying CLI (mirroring frp_token) so it
+# can be printed to the console when `deploy` finishes. Optional: empty
+# means the dashboard falls back to generating its own random password.
+DASHBOARD_INITIAL_ADMIN_PASSWORD="${DASHBOARD_INITIAL_ADMIN_PASSWORD:-}"
 
 # Provider-agnostic: this box may be ARM (EC2 Graviton) or x86_64
 # (Lightsail has no ARM bundles), so the frp/caddy release asset arch
@@ -131,6 +135,7 @@ Environment=SMTP_HOST=${SMTP_HOST}
 Environment=SMTP_PORT=${SMTP_PORT}
 Environment=SMTP_USERNAME=${SMTP_USERNAME}
 Environment=SMTP_PASSWORD=${SMTP_PASSWORD}
+Environment=DASHBOARD_INITIAL_ADMIN_PASSWORD=${DASHBOARD_INITIAL_ADMIN_PASSWORD}
 ExecStart=/opt/wildtunnel-dashboard/bin/python -m wildtunnel.dashboard.main
 Restart=always
 RestartSec=5

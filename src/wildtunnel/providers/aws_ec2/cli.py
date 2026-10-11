@@ -12,7 +12,12 @@ from botocore.exceptions import ClientError
 
 from ... import token as token_module
 from ...frpc_config import DEFAULT_SERVER_PORT
-from ...paths import AWS_EC2_CACHE_DIR, AWS_EC2_CONFIG_FILE, other_provider
+from ...paths import (
+    AWS_EC2_CACHE_DIR,
+    AWS_EC2_CONFIG_FILE,
+    DASHBOARD_ADMIN_PASSWORD_FILE,
+    other_provider,
+)
 from ...prompts import confirm_overwrite
 from .config import FRP_TOKEN_PARAM, PROVIDER, STACK_NAME, AwsEc2Config, describe_stack
 
@@ -180,6 +185,9 @@ def config(
 def deploy() -> None:
     """Deploy (or update) the AWS stack."""
     _run_cdk("deploy", _load_config())
+    if DASHBOARD_ADMIN_PASSWORD_FILE.exists():
+        password = DASHBOARD_ADMIN_PASSWORD_FILE.read_text().strip()
+        click.echo(f"dashboard admin password: {password}")
 
 
 @aws_ec2.command()

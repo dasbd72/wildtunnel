@@ -37,6 +37,19 @@ def test_writes_plaintext_password_to_secret_file_with_restrictive_permissions(
     assert mode == 0o600
 
 
+def test_uses_the_given_password_instead_of_generating_one(tmp_path: Path) -> None:
+    conn = _connect()
+    secret_file = tmp_path / "initial-password.txt"
+
+    password = bootstrap.ensure_bootstrapped(conn, secret_file, password="my-chosen-pw")
+
+    assert password == "my-chosen-pw"
+    admin = db.get_admin(conn)
+    assert admin is not None
+    assert db.verify_password(admin, "my-chosen-pw") is True
+    assert secret_file.read_text().strip() == "my-chosen-pw"
+
+
 def test_does_not_regenerate_password_when_admin_already_exists(tmp_path: Path) -> None:
     conn = _connect()
     db.create_admin(conn, password="already-set", must_change_password=False)

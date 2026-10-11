@@ -25,6 +25,7 @@ FRPC_TOML_FILE = CONFIG_DIR / "frpc.toml"
 AWS_EC2_CONFIG_FILE = CONFIG_DIR / "aws-ec2-config.json"
 FRP_TOKEN_FILE = CONFIG_DIR / "frp-token"
 FRP_STATS_PASSWORD_FILE = CONFIG_DIR / "frp-stats-password"
+DASHBOARD_ADMIN_PASSWORD_FILE = CONFIG_DIR / "dashboard-admin-password"
 AWS_LIGHTSAIL_CONFIG_FILE = CONFIG_DIR / "aws-lightsail-config.json"
 
 

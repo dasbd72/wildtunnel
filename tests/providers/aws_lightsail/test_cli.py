@@ -17,6 +17,11 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         aws_lightsail_cli, "FRP_STATS_PASSWORD_FILE", tmp_path / "frp-stats-password"
     )
+    monkeypatch.setattr(
+        aws_lightsail_cli,
+        "DASHBOARD_ADMIN_PASSWORD_FILE",
+        tmp_path / "dashboard-admin-password",
+    )
     return tmp_path
 
 
@@ -230,6 +235,43 @@ class TestDeploy:
 
         assert len(seen_passwords) == 2
         assert seen_passwords[0] == seen_passwords[1]
+
+    def test_generates_dashboard_admin_password_once_and_reuses_it(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        seen_passwords: list[str] = []
+
+        def _fake_deploy(_config: object, _token: str, **kwargs: object) -> str:
+            seen_passwords.append(str(kwargs["dashboard_admin_password"]))
+            return "1.2.3.4"
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _fake_deploy)
+        runner = CliRunner()
+
+        runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+        runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert len(seen_passwords) == 2
+        assert seen_passwords[0] == seen_passwords[1]
+
+    def test_deploy_prints_the_dashboard_admin_password(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        monkeypatch.setattr(
+            aws_lightsail_cli,
+            "deploy_instance",
+            lambda _config, _token, **_kwargs: "1.2.3.4",
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code == 0, result.output
+        assert "admin password" in result.output.lower()
+        password = aws_lightsail_cli.DASHBOARD_ADMIN_PASSWORD_FILE.read_text().strip()
+        assert password in result.output
 
     def test_wraps_client_error_clearly(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch

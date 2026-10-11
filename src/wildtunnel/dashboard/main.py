@@ -66,7 +66,11 @@ def build_app() -> FastAPI:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     db.init_schema(conn)
-    ensure_bootstrapped(conn, secret_file)
+    ensure_bootstrapped(
+        conn,
+        secret_file,
+        password=os.environ.get("DASHBOARD_INITIAL_ADMIN_PASSWORD") or None,
+    )
 
     session_secret = session_secret_file.read_text().strip()
     stats_source = FrpsStatsSource(
