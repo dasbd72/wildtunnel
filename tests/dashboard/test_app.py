@@ -290,6 +290,34 @@ def test_logged_in_admin_can_bind_recovery_email() -> None:
     assert response.status_code in (302, 303)
 
 
+def test_account_email_get_and_post_are_gated_behind_forced_password_change() -> None:
+    client = _client_with_admin(password="correct-horse", must_change_password=True)
+    client.post("/login", data={"password": "correct-horse"})
+
+    get_response = client.get("/account/email", follow_redirects=False)
+    assert get_response.status_code in (302, 303)
+    assert get_response.headers["location"] == "/change-password"
+
+    post_response = client.post(
+        "/account/email", data={"email": "admin@example.com"}, follow_redirects=False
+    )
+    assert post_response.status_code in (302, 303)
+    assert post_response.headers["location"] == "/change-password"
+
+
+def test_account_email_is_reachable_once_password_has_been_changed() -> None:
+    client = _client_with_admin(password="correct-horse", must_change_password=True)
+    client.post("/login", data={"password": "correct-horse"})
+    client.post("/change-password", data={"password": "new-password"})
+
+    response = client.post(
+        "/account/email", data={"email": "admin@example.com"}, follow_redirects=False
+    )
+
+    assert response.status_code in (302, 303)
+    assert response.headers["location"] == "/"
+
+
 def test_forgot_password_sends_reset_token_to_bound_email() -> None:
     mailer = FakeMailer()
     client = _client_with_admin(
@@ -366,6 +394,31 @@ def test_reset_password_rejects_already_used_token() -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_root_renders_links_to_other_pages_once_unlocked() -> None:
+    client = _client_with_admin(password="correct-horse", must_change_password=False)
+    client.post("/login", data={"password": "correct-horse"})
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "/stats" in response.text
+    assert "/egress" in response.text
+    assert "/account/email" in response.text
+    assert "/logout" in response.text
+
+
+def test_logout_clears_session_so_subsequent_requests_are_unauthenticated() -> None:
+    client = _client_with_admin(password="correct-horse", must_change_password=False)
+    client.post("/login", data={"password": "correct-horse"})
+
+    logout = client.post("/logout", follow_redirects=False)
+    assert logout.status_code in (302, 303)
+    assert logout.headers["location"] == "/login"
+
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 401
 
 
 def test_reset_password_rejects_expired_token() -> None:

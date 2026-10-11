@@ -13,6 +13,9 @@ _PROXY_TYPES = ("tcp", "udp", "http", "https", "stcp", "xtcp")
 
 _REQUEST_TIMEOUT_SECS = 3
 
+# frps's webServer stats port, as bound by server-setup.sh.
+DEFAULT_STATS_BASE_URL = "http://127.0.0.1:7500"
+
 
 @dataclass(frozen=True)
 class ProxyStats:

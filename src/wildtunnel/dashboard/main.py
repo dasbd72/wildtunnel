@@ -10,10 +10,9 @@ from wildtunnel.dashboard import db
 from wildtunnel.dashboard.app import create_app
 from wildtunnel.dashboard.bootstrap import ensure_bootstrapped
 from wildtunnel.dashboard.mailer import Mailer, SmtpConfig, SmtpMailer
-from wildtunnel.dashboard.stats import FrpsStatsSource
+from wildtunnel.dashboard.stats import DEFAULT_STATS_BASE_URL, FrpsStatsSource
 
 _DEFAULT_PORT = 8080
-_FRP_STATS_BASE_URL = "http://127.0.0.1:7500"
 _DEFAULT_EGRESS_SAMPLE_INTERVAL_SECONDS = 300.0
 
 
@@ -71,7 +70,7 @@ def build_app() -> FastAPI:
 
     session_secret = session_secret_file.read_text().strip()
     stats_source = FrpsStatsSource(
-        base_url=_FRP_STATS_BASE_URL,
+        base_url=DEFAULT_STATS_BASE_URL,
         username=os.environ.get("FRP_STATS_USER", ""),
         password=os.environ.get("FRP_STATS_PASSWORD", ""),
     )

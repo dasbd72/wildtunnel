@@ -13,27 +13,38 @@ from starlette.middleware.sessions import SessionMiddleware
 from wildtunnel.dashboard import db, egress
 from wildtunnel.dashboard.db import Admin
 from wildtunnel.dashboard.mailer import Mailer
-from wildtunnel.dashboard.stats import FrpsStatsSource, StatsSource
+from wildtunnel.dashboard.stats import (
+    DEFAULT_STATS_BASE_URL,
+    FrpsStatsSource,
+    StatsSource,
+)
 
 _INVALID_CREDENTIALS = HTTPException(status_code=401, detail="invalid credentials")
 _NOT_AUTHENTICATED = HTTPException(status_code=401, detail="not authenticated")
 _INVALID_OR_EXPIRED_TOKEN = HTTPException(
     status_code=400, detail="invalid or expired token"
 )
-_PASSWORD_FORM = HTMLResponse("<form method='post'><input name='password'></form>")
-_EMAIL_FORM = HTMLResponse("<form method='post'><input name='email'></form>")
-_FORGOT_PASSWORD_FORM = HTMLResponse("<form method='post'><input name='email'></form>")
-_RESET_PASSWORD_FORM = HTMLResponse(
-    "<form method='post'><input name='token'><input name='password'></form>"
-)
+
+
+class _MustChangePassword(Exception):
+    """Raised by current_admin_with_password_set to force /change-password."""
+
+
+def _form(*field_names: str) -> HTMLResponse:
+    """Build a bare POST form with one <input> per field name, in order."""
+    inputs = "".join(f"<input name='{name}'>" for name in field_names)
+    return HTMLResponse(f"<form method='post'>{inputs}</form>")
+
+
+_PASSWORD_FORM = _form("password")
+_EMAIL_FORM = _form("email")
+_FORGOT_PASSWORD_FORM = _form("email")
+_RESET_PASSWORD_FORM = _form("token", "password")
 _RESET_TOKEN_SENT = HTMLResponse(
     "<p>If that email is registered, a reset link was sent.</p>"
 )
 
 _DEFAULT_RESET_TOKEN_TTL_SECONDS = 3600.0
-
-# frps's webServer stats port, as bound by server-setup.sh.
-_DEFAULT_STATS_BASE_URL = "http://127.0.0.1:7500"
 
 
 def create_app(
@@ -75,7 +86,7 @@ def create_app(
     app.state.conn = conn
     app.state.mailer = mailer
     app.state.stats_source = stats_source or FrpsStatsSource(
-        base_url=_DEFAULT_STATS_BASE_URL, username="", password=""
+        base_url=DEFAULT_STATS_BASE_URL, username="", password=""
     )
     app.state.egress_sampler_task = None
 
@@ -86,6 +97,23 @@ def create_app(
         if admin is None:
             raise _NOT_AUTHENTICATED
         return admin
+
+    async def current_admin_with_password_set(
+        admin: Admin = Depends(current_admin),  # noqa: B008
+    ) -> Admin:
+        # Everywhere except /change-password (the escape valve) and
+        # /login must stay unreachable until the forced first-login
+        # password change is done - issue #8's "no other route is
+        # reachable" acceptance criterion.
+        if admin.must_change_password:
+            raise _MustChangePassword
+        return admin
+
+    @app.exception_handler(_MustChangePassword)
+    async def _redirect_to_change_password(
+        request: Request, exc: _MustChangePassword
+    ) -> RedirectResponse:
+        return RedirectResponse(url="/change-password", status_code=303)
 
     @app.get("/login")
     async def login_form() -> HTMLResponse:
@@ -125,7 +153,7 @@ def create_app(
 
     @app.get("/account/email")
     async def email_form(
-        admin: Admin = Depends(current_admin),  # noqa: B008
+        admin: Admin = Depends(current_admin_with_password_set),  # noqa: B008
     ) -> HTMLResponse:
         return _EMAIL_FORM
 
@@ -133,7 +161,7 @@ def create_app(
     async def bind_email(
         request: Request,
         email: str = Form(...),
-        admin: Admin = Depends(current_admin),  # noqa: B008
+        admin: Admin = Depends(current_admin_with_password_set),  # noqa: B008
     ) -> RedirectResponse:
         db.set_email(request.app.state.conn, email)
         return RedirectResponse(url="/", status_code=303)
@@ -174,21 +202,30 @@ def create_app(
             raise _INVALID_OR_EXPIRED_TOKEN
         return RedirectResponse(url="/login", status_code=303)
 
-    @app.get("/", response_model=None)
+    @app.get("/")
     async def root(
-        admin: Admin = Depends(current_admin),  # noqa: B008
-    ) -> HTMLResponse | RedirectResponse:
-        if admin.must_change_password:
-            return RedirectResponse(url="/change-password", status_code=303)
-        return HTMLResponse("<p>dashboard</p>")
+        admin: Admin = Depends(current_admin_with_password_set),  # noqa: B008
+    ) -> HTMLResponse:
+        return HTMLResponse(
+            "<p>dashboard</p><ul>"
+            "<li><a href='/stats'>stats</a></li>"
+            "<li><a href='/egress'>egress</a></li>"
+            "<li><a href='/account/email'>account/email</a></li>"
+            "<li><form method='post' action='/logout'>"
+            "<button type='submit'>logout</button></form></li>"
+            "</ul>"
+        )
 
-    @app.get("/stats", response_model=None)
+    @app.post("/logout")
+    async def logout(request: Request) -> RedirectResponse:
+        request.session.clear()
+        return RedirectResponse(url="/login", status_code=303)
+
+    @app.get("/stats")
     async def stats(
         request: Request,
-        admin: Admin = Depends(current_admin),  # noqa: B008
-    ) -> HTMLResponse | RedirectResponse:
-        if admin.must_change_password:
-            return RedirectResponse(url="/change-password", status_code=303)
+        admin: Admin = Depends(current_admin_with_password_set),  # noqa: B008
+    ) -> HTMLResponse:
         rows = "".join(
             f"<tr><td>{proxy.name}</td><td>{proxy.connections}</td>"
             f"<td>{proxy.bytes_in}</td><td>{proxy.bytes_out}</td></tr>"
@@ -200,13 +237,11 @@ def create_app(
         )
         return HTMLResponse(table)
 
-    @app.get("/egress", response_model=None)
+    @app.get("/egress")
     async def egress_page(
         request: Request,
-        admin: Admin = Depends(current_admin),  # noqa: B008
-    ) -> HTMLResponse | RedirectResponse:
-        if admin.must_change_password:
-            return RedirectResponse(url="/change-password", status_code=303)
+        admin: Admin = Depends(current_admin_with_password_set),  # noqa: B008
+    ) -> HTMLResponse:
         rows = "".join(
             f"<tr><td>{total.tunnel_name}</td><td>{total.day_bytes}</td>"
             f"<td>{total.week_bytes}</td><td>{total.month_bytes}</td></tr>"
