@@ -247,6 +247,26 @@ def test_tampered_session_cookie_is_rejected() -> None:
     assert response.status_code == 401
 
 
+def test_change_password_page_includes_current_password_field_when_not_forced() -> None:
+    client = _client_with_admin(password="correct-horse", must_change_password=False)
+    client.post("/login", data={"password": "correct-horse"})
+
+    response = client.get("/change-password")
+
+    assert response.status_code == 200
+    assert "name='current_password'" in response.text
+
+
+def test_change_password_page_omits_current_password_field_when_forced() -> None:
+    client = _client_with_admin(password="correct-horse", must_change_password=True)
+    client.post("/login", data={"password": "correct-horse"})
+
+    response = client.get("/change-password")
+
+    assert response.status_code == 200
+    assert "name='current_password'" not in response.text
+
+
 def test_full_change_password_requires_current_password_when_not_forced() -> None:
     client = _client_with_admin(password="correct-horse", must_change_password=False)
     client.post("/login", data={"password": "correct-horse"})
