@@ -1,8 +1,9 @@
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from wildtunnel.dashboard import db
+from wildtunnel.dashboard import db, egress
 from wildtunnel.dashboard.app import create_app
 from wildtunnel.dashboard.mailer import Mailer
 from wildtunnel.dashboard.stats import ProxyStats, StatsSource
@@ -159,6 +160,70 @@ def test_stats_shows_per_tunnel_connections_and_bandwidth_when_authenticated() -
     assert "3" in response.text
     assert "1024" in response.text
     assert "2048" in response.text
+
+
+def test_egress_rejects_unauthenticated_request() -> None:
+    client = _client_with_admin()
+
+    response = client.get("/egress", follow_redirects=False)
+
+    assert response.status_code == 401
+
+
+def test_egress_shows_day_week_month_totals_per_tunnel_when_authenticated() -> None:
+    client = _client_with_admin(password="correct-horse", must_change_password=False)
+    client.post("/login", data={"password": "correct-horse"})
+    conn = client.app.state.conn  # type: ignore[attr-defined]
+    egress.init_schema(conn)
+    now = datetime.now(UTC)
+    today = now.strftime("%Y-%m-%d")
+    within_week = (now - timedelta(days=5)).strftime("%Y-%m-%d")
+    outside_week_within_month = (now - timedelta(days=20)).strftime("%Y-%m-%d")
+    outside_month = (now - timedelta(days=45)).strftime("%Y-%m-%d")
+    conn.executemany(
+        "INSERT INTO egress_daily (tunnel_name, day, bytes_out) VALUES (?, ?, ?)",
+        [
+            ("home-ssh", today, 100),
+            ("home-ssh", within_week, 50),
+            ("home-ssh", outside_week_within_month, 10),
+            ("home-ssh", outside_month, 999),
+        ],
+    )
+    conn.commit()
+
+    response = client.get("/egress")
+
+    assert response.status_code == 200
+    assert "home-ssh" in response.text
+    assert "100" in response.text
+    assert "150" in response.text
+    assert "160" in response.text
+    assert "999" not in response.text
+
+
+def test_egress_sampler_task_is_scheduled_when_interval_configured() -> None:
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    db.init_schema(conn)
+    db.create_admin(conn, password="bootstrap-pw", must_change_password=True)
+    app = create_app(
+        conn,
+        session_secret="test-secret",
+        stats_source=_FakeStatsSource([]),
+        egress_sample_interval_seconds=300,
+    )
+
+    with TestClient(app):
+        assert app.state.egress_sampler_task is not None
+        assert not app.state.egress_sampler_task.done()
+
+    assert app.state.egress_sampler_task.cancelled()
+
+
+def test_no_egress_sampler_task_when_interval_not_configured() -> None:
+    client = _client_with_admin()
+
+    with TestClient(client.app):
+        assert client.app.state.egress_sampler_task is None  # type: ignore[attr-defined]
 
 
 def test_tampered_session_cookie_is_rejected() -> None:

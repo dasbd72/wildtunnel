@@ -14,6 +14,7 @@ from wildtunnel.dashboard.stats import FrpsStatsSource
 
 _DEFAULT_PORT = 8080
 _FRP_STATS_BASE_URL = "http://127.0.0.1:7500"
+_DEFAULT_EGRESS_SAMPLE_INTERVAL_SECONDS = 300.0
 
 
 def _env_path(name: str) -> Path:
@@ -53,6 +54,11 @@ def build_app() -> FastAPI:
     The live stats page polls frps's webServer API (see server-setup.sh)
     using FRP_STATS_USER/FRP_STATS_PASSWORD, the same credentials
     server-setup.sh configures frps with.
+
+    A background task samples the same stats source every
+    EGRESS_SAMPLE_INTERVAL_SECONDS (default 300s / 5 minutes) and
+    accumulates per-tunnel egress into the day/week/month rollup tables
+    (see dashboard/egress.py), feeding the authenticated /egress page.
     """
     db_path = _env_path("DASHBOARD_DB_PATH")
     secret_file = _env_path("DASHBOARD_SECRET_FILE")
@@ -70,11 +76,16 @@ def build_app() -> FastAPI:
         password=os.environ.get("FRP_STATS_PASSWORD", ""),
     )
     mailer = _build_mailer()
+    egress_sample_interval_seconds = float(
+        os.environ.get("EGRESS_SAMPLE_INTERVAL_SECONDS")
+        or _DEFAULT_EGRESS_SAMPLE_INTERVAL_SECONDS
+    )
     return create_app(
         conn,
         session_secret=session_secret,
         stats_source=stats_source,
         mailer=mailer,
+        egress_sample_interval_seconds=egress_sample_interval_seconds,
     )
 
 

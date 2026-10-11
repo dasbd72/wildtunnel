@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import secrets
 import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
-from wildtunnel.dashboard import db
+from wildtunnel.dashboard import db, egress
 from wildtunnel.dashboard.db import Admin
 from wildtunnel.dashboard.mailer import Mailer
 from wildtunnel.dashboard.stats import FrpsStatsSource, StatsSource
@@ -40,14 +43,41 @@ def create_app(
     mailer: Mailer | None = None,
     reset_token_ttl_seconds: float = _DEFAULT_RESET_TOKEN_TTL_SECONDS,
     stats_source: StatsSource | None = None,
+    egress_sample_interval_seconds: float | None = None,
 ) -> FastAPI:
-    app = FastAPI()
+    egress.init_schema(conn)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # The periodic egress sampler only runs when a cadence is given
+        # (production wiring, via main.py). Tests exercising routes via
+        # TestClient without a `with` block never trigger lifespan events
+        # at all, so this has no effect on them either way; tests that do
+        # want the sampler running use `with TestClient(app) as client`.
+        task = None
+        if egress_sample_interval_seconds is not None:
+            task = asyncio.create_task(
+                egress.run_periodically(
+                    app.state.stats_source,
+                    app.state.conn,
+                    egress_sample_interval_seconds,
+                )
+            )
+        app.state.egress_sampler_task = task
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+
+    app = FastAPI(lifespan=lifespan)
     app.add_middleware(SessionMiddleware, secret_key=session_secret)
     app.state.conn = conn
     app.state.mailer = mailer
     app.state.stats_source = stats_source or FrpsStatsSource(
         base_url=_DEFAULT_STATS_BASE_URL, username="", password=""
     )
+    app.state.egress_sampler_task = None
 
     async def current_admin(request: Request) -> Admin:
         if not request.session.get("authenticated"):
@@ -167,6 +197,24 @@ def create_app(
         table = (
             "<table><thead><tr><th>tunnel</th><th>connections</th>"
             f"<th>bytes in</th><th>bytes out</th></tr></thead><tbody>{rows}</tbody></table>"
+        )
+        return HTMLResponse(table)
+
+    @app.get("/egress", response_model=None)
+    async def egress_page(
+        request: Request,
+        admin: Admin = Depends(current_admin),  # noqa: B008
+    ) -> HTMLResponse | RedirectResponse:
+        if admin.must_change_password:
+            return RedirectResponse(url="/change-password", status_code=303)
+        rows = "".join(
+            f"<tr><td>{total.tunnel_name}</td><td>{total.day_bytes}</td>"
+            f"<td>{total.week_bytes}</td><td>{total.month_bytes}</td></tr>"
+            for total in egress.totals_by_tunnel(request.app.state.conn)
+        )
+        table = (
+            "<table><thead><tr><th>tunnel</th><th>day</th>"
+            f"<th>week</th><th>month</th></tr></thead><tbody>{rows}</tbody></table>"
         )
         return HTMLResponse(table)
 
