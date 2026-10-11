@@ -124,6 +124,10 @@ def render_user_data(
     frp_version: str,
     caddy_version: str,
     extra_port_range: tuple[int, int] | None,
+    smtp_host: str = "",
+    smtp_port: str = "",
+    smtp_username: str = "",
+    smtp_password: str = "",
 ) -> str:
     allow_ports = (
         f"allowPorts = [{{ start = {extra_port_range[0]}, "
@@ -140,6 +144,10 @@ def render_user_data(
         "__FRP_VERSION__": frp_version,
         "__CADDY_VERSION__": caddy_version,
         "__ALLOW_PORTS__": allow_ports,
+        "__SMTP_HOST__": smtp_host,
+        "__SMTP_PORT__": smtp_port,
+        "__SMTP_USERNAME__": smtp_username,
+        "__SMTP_PASSWORD__": smtp_password,
         "__SERVER_SETUP_SCRIPT__": _SERVER_SETUP_SCRIPT.read_text(),
     }.items():
         script = script.replace(placeholder, value)

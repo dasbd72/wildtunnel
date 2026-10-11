@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import sqlite3
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
@@ -8,13 +9,33 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from wildtunnel.dashboard import db
 from wildtunnel.dashboard.db import Admin
+from wildtunnel.dashboard.mailer import Mailer
 
 _INVALID_CREDENTIALS = HTTPException(status_code=401, detail="invalid credentials")
 _NOT_AUTHENTICATED = HTTPException(status_code=401, detail="not authenticated")
+_INVALID_OR_EXPIRED_TOKEN = HTTPException(
+    status_code=400, detail="invalid or expired token"
+)
 _PASSWORD_FORM = HTMLResponse("<form method='post'><input name='password'></form>")
+_EMAIL_FORM = HTMLResponse("<form method='post'><input name='email'></form>")
+_FORGOT_PASSWORD_FORM = HTMLResponse("<form method='post'><input name='email'></form>")
+_RESET_PASSWORD_FORM = HTMLResponse(
+    "<form method='post'><input name='token'><input name='password'></form>"
+)
+_RESET_TOKEN_SENT = HTMLResponse(
+    "<p>If that email is registered, a reset link was sent.</p>"
+)
+
+_DEFAULT_RESET_TOKEN_TTL_SECONDS = 3600.0
 
 
-def create_app(conn: sqlite3.Connection, *, session_secret: str) -> FastAPI:
+def create_app(
+    conn: sqlite3.Connection,
+    *,
+    session_secret: str,
+    mailer: Mailer | None = None,
+    reset_token_ttl_seconds: float = _DEFAULT_RESET_TOKEN_TTL_SECONDS,
+) -> FastAPI:
     app = FastAPI()
     app.add_middleware(SessionMiddleware, secret_key=session_secret)
     app.state.conn = conn
@@ -49,10 +70,70 @@ def create_app(conn: sqlite3.Connection, *, session_secret: str) -> FastAPI:
     async def change_password(
         request: Request,
         password: str = Form(...),
+        current_password: str | None = Form(None),
         admin: Admin = Depends(current_admin),  # noqa: B008
     ) -> RedirectResponse:
+        # The forced first-login change (must_change_password) doesn't
+        # require the bootstrap password back, since the admin just read
+        # it from the secret file. A voluntary change later must prove
+        # knowledge of the current password first.
+        if not admin.must_change_password and (
+            current_password is None or not db.verify_password(admin, current_password)
+        ):
+            raise _INVALID_CREDENTIALS
         db.set_password(request.app.state.conn, password, must_change_password=False)
         return RedirectResponse(url="/", status_code=303)
+
+    @app.get("/account/email")
+    async def email_form(
+        admin: Admin = Depends(current_admin),  # noqa: B008
+    ) -> HTMLResponse:
+        return _EMAIL_FORM
+
+    @app.post("/account/email")
+    async def bind_email(
+        request: Request,
+        email: str = Form(...),
+        admin: Admin = Depends(current_admin),  # noqa: B008
+    ) -> RedirectResponse:
+        db.set_email(request.app.state.conn, email)
+        return RedirectResponse(url="/", status_code=303)
+
+    @app.get("/forgot-password")
+    async def forgot_password_form() -> HTMLResponse:
+        return _FORGOT_PASSWORD_FORM
+
+    @app.post("/forgot-password")
+    async def forgot_password(request: Request, email: str = Form(...)) -> HTMLResponse:
+        admin = db.get_admin(request.app.state.conn)
+        # Always the same response whether or not the email matched a
+        # bound address, so this endpoint can't be used to probe which
+        # addresses are registered.
+        if admin is not None and admin.email is not None and admin.email == email:
+            token = secrets.token_urlsafe(32)
+            db.create_password_reset_token(
+                request.app.state.conn, token, ttl_seconds=reset_token_ttl_seconds
+            )
+            if mailer is not None:
+                mailer.send(
+                    to=admin.email,
+                    subject="wildtunnel password reset",
+                    body=f"Use this code to reset your password: {token}",
+                )
+        return _RESET_TOKEN_SENT
+
+    @app.get("/reset-password")
+    async def reset_password_form() -> HTMLResponse:
+        return _RESET_PASSWORD_FORM
+
+    @app.post("/reset-password")
+    async def reset_password(
+        request: Request, token: str = Form(...), password: str = Form(...)
+    ) -> RedirectResponse:
+        ok = db.reset_password_with_token(request.app.state.conn, token, password)
+        if not ok:
+            raise _INVALID_OR_EXPIRED_TOKEN
+        return RedirectResponse(url="/login", status_code=303)
 
     @app.get("/", response_model=None)
     async def root(

@@ -17,6 +17,10 @@ _ENV_VAR_CONTRACT = (
     "FRP_BIND_PORT",
     "FRP_VHOST_HTTP_PORT",
     "ALLOW_PORTS",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USERNAME",
+    "SMTP_PASSWORD",
 )
 
 
@@ -36,6 +40,13 @@ def test_has_no_textual_placeholders() -> None:
     # The generic installer takes its inputs as env vars, not
     # synth-time string substitution — no leftover __PLACEHOLDER__ tokens.
     assert "__" not in _SCRIPT
+
+
+def test_writes_smtp_settings_to_restrictive_dashboard_env_file() -> None:
+    # SMTP credentials are secrets like the frp token; the dashboard's env
+    # file must not be left world/group readable.
+    assert "/etc/wildtunnel/dashboard.env" in _SCRIPT
+    assert "chmod 600 /etc/wildtunnel/dashboard.env" in _SCRIPT
 
 
 def test_detects_cpu_architecture_instead_of_hardcoding_it() -> None:

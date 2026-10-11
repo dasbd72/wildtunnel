@@ -8,6 +8,13 @@ set -euxo pipefail
 : "${FRP_BIND_PORT:?FRP_BIND_PORT is required}"
 : "${FRP_VHOST_HTTP_PORT:?FRP_VHOST_HTTP_PORT is required}"
 ALLOW_PORTS="${ALLOW_PORTS:-}"
+# SMTP relay settings are optional: the dashboard's forgot-password email
+# flow only needs them once an admin has bound a recovery address, so
+# provisioning must not fail without them configured yet.
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-}"
+SMTP_USERNAME="${SMTP_USERNAME:-}"
+SMTP_PASSWORD="${SMTP_PASSWORD:-}"
 
 # Provider-agnostic: this box may be ARM (EC2 Graviton) or x86_64
 # (Lightsail has no ARM bundles), so the frp/caddy release asset arch
@@ -130,3 +137,17 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now caddy
+
+# --- dashboard SMTP relay settings ---
+# The dashboard's change-password/forgot-password service (not started by
+# this script) reads its generic SMTP relay config from this env file.
+# Written unconditionally (even when empty) so a later dashboard unit has
+# a stable path to source regardless of whether SMTP is configured yet.
+mkdir -p /etc/wildtunnel
+cat > /etc/wildtunnel/dashboard.env <<EOF
+SMTP_HOST=${SMTP_HOST}
+SMTP_PORT=${SMTP_PORT}
+SMTP_USERNAME=${SMTP_USERNAME}
+SMTP_PASSWORD=${SMTP_PASSWORD}
+EOF
+chmod 600 /etc/wildtunnel/dashboard.env
