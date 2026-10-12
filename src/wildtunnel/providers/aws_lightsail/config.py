@@ -42,6 +42,7 @@ class AwsLightsailConfig:
     domain: str
     region: str
     extra_port_range: tuple[int, int] | None = None
+    no_tls: bool = False
 
     @classmethod
     def load(cls, path: Path) -> AwsLightsailConfig:
@@ -55,6 +56,7 @@ class AwsLightsailConfig:
                 if extra_port_range is not None
                 else None
             ),
+            no_tls=data.get("no_tls", False),
         )
 
     def save(self, path: Path) -> None:
@@ -65,6 +67,7 @@ class AwsLightsailConfig:
             "extra_port_range": (
                 list(self.extra_port_range) if self.extra_port_range else None
             ),
+            "no_tls": self.no_tls,
             "aws_lightsail": {"region": self.region},
         }
         path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
@@ -143,6 +146,7 @@ def render_user_data(
     frp_stats_user: str = "",
     frp_stats_password: str = "",
     dashboard_admin_password: str = "",
+    no_tls: bool = False,
 ) -> str:
     allow_ports = (
         f"allowPorts = [{{ start = {extra_port_range[0]}, "
@@ -162,6 +166,7 @@ def render_user_data(
         "__FRP_STATS_USER__": frp_stats_user,
         "__FRP_STATS_PASSWORD__": frp_stats_password,
         "__DASHBOARD_ADMIN_PASSWORD__": dashboard_admin_password,
+        "__NO_TLS__": "1" if no_tls else "",
         "__SERVER_SETUP_SCRIPT__": _SERVER_SETUP_SCRIPT.read_text(),
     }.items():
         script = script.replace(placeholder, value)
@@ -260,6 +265,7 @@ def deploy_instance(
             frp_stats_user=frp_stats_user,
             frp_stats_password=frp_stats_password,
             dashboard_admin_password=dashboard_admin_password,
+            no_tls=config.no_tls,
         )
         client.create_instances(
             instanceNames=[INSTANCE_NAME],

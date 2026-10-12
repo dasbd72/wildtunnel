@@ -10,6 +10,11 @@ set -euxo pipefail
 : "${FRP_STATS_USER:?FRP_STATS_USER is required}"
 : "${FRP_STATS_PASSWORD:?FRP_STATS_PASSWORD is required}"
 ALLOW_PORTS="${ALLOW_PORTS:-}"
+# Optional: non-empty means provision Caddy in plain-HTTP (no-TLS) mode,
+# skipping Let's Encrypt and the HTTP->HTTPS redirect. Empty (the default)
+# means the on-demand TLS setup. Only sets the *initial* mode; the box can
+# be toggled afterwards with `wildtunnel-tls-enable`/`wildtunnel-tls-disable`.
+NO_TLS="${NO_TLS:-}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-8080}"
 # Generated client-side by the deploying CLI (mirroring frp_token) so it
 # can be printed to the console when `deploy` finishes. Optional: empty
@@ -176,11 +181,19 @@ tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy
 chmod +x /usr/local/bin/caddy
 rm -f /tmp/caddy.tar.gz
 
-# --- TLS: Caddy auto-issues a per-host cert via Let's Encrypt HTTP-01 on
-# first request (on-demand). DNS lives on Cloudflare now, so there's no
-# DNS-01 challenge and no wildcard cert; each subdomain just needs to
-# resolve to this host's public IP (DNS-only, not Cloudflare-proxied) with
-# port 80 reachable. Caddy also handles renewal itself, so no certbot timer.
+# Two Caddyfile variants are written at provision time so the on-box
+# `wildtunnel-tls-enable` / `wildtunnel-tls-disable` executables can swap
+# between them later without re-provisioning (deploy never re-runs on a
+# live box). The active Caddyfile and the state file are seeded from the
+# NO_TLS env var (empty = TLS, non-empty = plain HTTP).
+mkdir -p /etc/caddy
+
+# --- TLS variant: Caddy auto-issues a per-host cert via Let's Encrypt
+# HTTP-01 on first request (on-demand). DNS lives on Cloudflare now, so
+# there's no DNS-01 challenge and no wildcard cert; each subdomain just
+# needs to resolve to this host's public IP (DNS-only, not
+# Cloudflare-proxied) with port 80 reachable. Caddy also handles renewal
+# itself, so no certbot timer.
 #
 # Caddy refuses to start with on-demand TLS unless a permission check is
 # configured (abuse prevention: without one, anyone could make it request
@@ -192,8 +205,7 @@ rm -f /tmp/caddy.tar.gz
 # plain-http `ask` callback below can't speak to, and cert issuance for
 # every real subdomain silently fails.
 CADDY_ASK_ADDR="http://127.0.0.1:9123"
-mkdir -p /etc/caddy
-cat > /etc/caddy/Caddyfile <<EOF
+cat > /etc/caddy/Caddyfile.tls <<EOF
 {
     on_demand_tls {
         ask ${CADDY_ASK_ADDR}/ask
@@ -226,6 +238,63 @@ http://*.${DOMAIN} {
     redir https://{host}{uri} permanent
 }
 EOF
+
+# --- Plain (no-TLS) variant: serve plain HTTP on :80 only - no Let's
+# Encrypt, no redirect. The explicit http:// scheme on each site address
+# defeats Caddy's auto-HTTPS, so it never attempts to obtain a cert.
+cat > /etc/caddy/Caddyfile.plain <<EOF
+http://wildtunnel.${DOMAIN} {
+    reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
+}
+
+http://*.${DOMAIN} {
+    reverse_proxy 127.0.0.1:${FRP_VHOST_HTTP_PORT}
+}
+EOF
+
+# --- Active config + state file, seeded from NO_TLS. The toggle
+# executables below rewrite both of these; the state file is what makes
+# them idempotent and lets each one report the current mode.
+if [[ -n "${NO_TLS}" ]]; then
+  TLS_MODE=plain
+else
+  TLS_MODE=tls
+fi
+cp "/etc/caddy/Caddyfile.${TLS_MODE}" /etc/caddy/Caddyfile
+echo "${TLS_MODE}" > /etc/caddy/tls-mode
+
+# --- Toggle executables: swap the active Caddyfile between the two
+# variants and reload Caddy. Idempotent, and installed unconditionally so
+# a box can be toggled in either direction regardless of its initial mode.
+cat > /usr/local/bin/wildtunnel-tls-enable <<'EOF'
+#!/bin/bash
+set -euo pipefail
+STATE_FILE=/etc/caddy/tls-mode
+if [[ "$(cat "${STATE_FILE}" 2>/dev/null || echo plain)" == "tls" ]]; then
+  echo "TLS is already enabled"
+  exit 0
+fi
+cp /etc/caddy/Caddyfile.tls /etc/caddy/Caddyfile
+echo tls > "${STATE_FILE}"
+systemctl reload caddy
+echo "TLS enabled"
+EOF
+chmod +x /usr/local/bin/wildtunnel-tls-enable
+
+cat > /usr/local/bin/wildtunnel-tls-disable <<'EOF'
+#!/bin/bash
+set -euo pipefail
+STATE_FILE=/etc/caddy/tls-mode
+if [[ "$(cat "${STATE_FILE}" 2>/dev/null || echo tls)" == "plain" ]]; then
+  echo "TLS is already disabled"
+  exit 0
+fi
+cp /etc/caddy/Caddyfile.plain /etc/caddy/Caddyfile
+echo plain > "${STATE_FILE}"
+systemctl reload caddy
+echo "TLS disabled"
+EOF
+chmod +x /usr/local/bin/wildtunnel-tls-disable
 
 cat > /etc/systemd/system/caddy.service <<'UNIT'
 [Unit]

@@ -204,6 +204,30 @@ class TestConfig:
         config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
         assert config.extra_port_range is None
 
+    def test_saves_no_tls_when_given(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_ec2_cli.aws_ec2,
+            ["config", "--domain", "example.com", "--region", "us-east-1", "--no-tls"],
+        )
+
+        assert result.exit_code == 0, result.output
+        config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
+        assert config.no_tls is True
+
+    def test_no_tls_defaults_to_false(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_ec2_cli.aws_ec2,
+            ["config", "--domain", "example.com", "--region", "us-east-1"],
+        )
+
+        assert result.exit_code == 0, result.output
+        config = _saved_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
+        assert config.no_tls is False
+
     @pytest.mark.parametrize(
         "bad_range", ["garbage", "20100-20000", "0-100", "100-99999"]
     )
@@ -320,6 +344,32 @@ class TestDeployDestroyDiff:
         assert result.exit_code == 0, result.output
         call_args = " ".join(fake_collaborators["subprocess_calls"][0]["args"])
         assert "extraPortRange" not in call_args
+
+    def test_deploy_passes_no_tls_context_when_configured(
+        self, isolated_paths: Path, fake_collaborators: dict
+    ) -> None:
+        AwsEc2Config(domain="example.com", region="ap-northeast-1", no_tls=True).save(
+            aws_ec2_cli.AWS_EC2_CONFIG_FILE
+        )
+        runner = CliRunner()
+
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
+
+        assert result.exit_code == 0, result.output
+        call_args = fake_collaborators["subprocess_calls"][0]["args"]
+        assert "noTls=true" in call_args
+
+    def test_deploy_omits_no_tls_context_when_unconfigured(
+        self, isolated_paths: Path, fake_collaborators: dict
+    ) -> None:
+        _seed_config(aws_ec2_cli.AWS_EC2_CONFIG_FILE)
+        runner = CliRunner()
+
+        result = runner.invoke(aws_ec2_cli.aws_ec2, ["deploy"])
+
+        assert result.exit_code == 0, result.output
+        call_args = " ".join(fake_collaborators["subprocess_calls"][0]["args"])
+        assert "noTls" not in call_args
 
     def test_deploy_prints_the_admin_password_written_by_the_cdk_subprocess(
         self, isolated_paths: Path, fake_collaborators: dict

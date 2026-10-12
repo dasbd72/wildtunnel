@@ -53,6 +53,7 @@ Options for `aws-ec2 config`:
 - `--domain`: base domain for the tunnel subdomains, e.g. `example.com`.
 - `--region`: AWS region for the stack. Defaults to your AWS CLI region.
 - `--extra-port-range START-END`: opens a TCP+UDP port range on the EC2 host and in frps, for `frpc add --proto tcp|udp --remote-port`. Not opened unless given. Run `aws-ec2 deploy` again to apply a change.
+- `--no-tls`: provision Caddy in plain-HTTP mode — no Let's Encrypt, no HTTP→HTTPS redirect. TLS is the default. This only sets the initial mode for a fresh deploy; toggle a live box with `sudo wildtunnel-tls-disable` / `sudo wildtunnel-tls-enable`.
 - `--yes`: skips confirmation prompts.
 
 Record the `ElasticIp` output. Check status anytime with `wildtunnel aws-ec2 status`.
@@ -72,7 +73,7 @@ wildtunnel aws-lightsail config --domain example.com   # reads the region from y
 wildtunnel aws-lightsail deploy
 ```
 
-`aws-lightsail config` takes the same options as `aws-ec2 config`: `--domain`, `--region`, `--extra-port-range`, `--yes`. Check status anytime with `wildtunnel aws-lightsail status`.
+`aws-lightsail config` takes the same options as `aws-ec2 config`: `--domain`, `--region`, `--extra-port-range`, `--no-tls`, `--yes`. Check status anytime with `wildtunnel aws-lightsail status`.
 
 Lightsail instances cannot have an IAM role, so wildtunnel writes the frp token directly into the instance's user data at deploy time, instead of fetching it from SSM at boot. One effect: `wildtunnel aws-lightsail info` only works on the machine that ran `deploy`, since the token is never stored remotely.
 
@@ -156,6 +157,7 @@ Connect to the instance to run these as root:
 
 - `sudo wildtunnel-reset-password`: generates a new admin password, forces a change on next login, and prints the new password. The only account-recovery path if you're locked out — there's no email-based forgot-password flow.
 - `sudo wildtunnel-upgrade`: upgrades the installed `wildtunnel[dashboard]` package to the latest PyPI release and restarts the dashboard service. The only way to pick up dashboard fixes on an already-deployed instance — `deploy` never re-provisions a live box, so it can't push code updates by itself.
+- `sudo wildtunnel-tls-disable` / `sudo wildtunnel-tls-enable`: switch the box between plain HTTP and HTTPS by swapping the Caddyfile and reloading Caddy. This is the runtime counterpart to the deploy-time `--no-tls` flag — use it to change TLS mode on an already-deployed box (the `--no-tls` config flag only affects a fresh deploy).
 
 ## Upgrade from aws-reverse-tunnel
 

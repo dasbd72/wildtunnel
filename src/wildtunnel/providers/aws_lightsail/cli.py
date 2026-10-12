@@ -164,6 +164,13 @@ def aws_lightsail() -> None:
     "--remote-port`. Not opened at all unless given.",
 )
 @click.option(
+    "--no-tls",
+    is_flag=True,
+    help="Provision Caddy in plain-HTTP (no-TLS) mode: no Let's Encrypt, no "
+    "HTTP->HTTPS redirect. Defaults to TLS. Only sets the initial mode for a "
+    "fresh deploy; toggle a live box with wildtunnel-tls-enable/disable.",
+)
+@click.option(
     "--yes",
     is_flag=True,
     help="Overwrite an existing configuration without confirming.",
@@ -172,6 +179,7 @@ def config(
     domain: str,
     region: str | None,
     extra_port_range: str | None,
+    no_tls: bool,
     yes: bool,
 ) -> None:
     """Configure the domain/region that deploy/destroy/diff/status target."""
@@ -186,6 +194,7 @@ def config(
         domain=domain,
         region=region,
         extra_port_range=port_range,
+        no_tls=no_tls,
     )
 
     # A config file only holds another provider's shape if it was

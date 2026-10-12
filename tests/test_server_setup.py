@@ -17,6 +17,7 @@ _ENV_VAR_CONTRACT = (
     "FRP_BIND_PORT",
     "FRP_VHOST_HTTP_PORT",
     "ALLOW_PORTS",
+    "NO_TLS",
     "FRP_STATS_USER",
     "FRP_STATS_PASSWORD",
     "DASHBOARD_PORT",
@@ -135,8 +136,9 @@ def test_installs_upgrade_executable() -> None:
 
 
 def test_upgrade_wrapper_upgrades_the_dashboard_venv_package() -> None:
-    assert '/opt/wildtunnel-dashboard/bin/pip install --upgrade "wildtunnel[dashboard]"' in (
-        _SCRIPT
+    assert (
+        '/opt/wildtunnel-dashboard/bin/pip install --upgrade "wildtunnel[dashboard]"'
+        in (_SCRIPT)
     )
 
 
@@ -164,3 +166,70 @@ def test_caddyfile_routes_wildtunnel_subdomain_to_dashboard_ahead_of_wildcard() 
     dashboard_block = _SCRIPT[dashboard_start:wildcard_start]
     assert "on_demand" in dashboard_block
     assert "reverse_proxy 127.0.0.1:${DASHBOARD_PORT}" in dashboard_block
+
+
+def test_writes_both_caddyfile_variants() -> None:
+    # The toggle executables need both variants on disk, regardless of the
+    # initial mode, so the box can be flipped in either direction later.
+    assert "cat > /etc/caddy/Caddyfile.tls" in _SCRIPT
+    assert "cat > /etc/caddy/Caddyfile.plain" in _SCRIPT
+
+
+def test_plain_caddyfile_serves_http_without_tls_or_redirect() -> None:
+    plain_start = _SCRIPT.index("cat > /etc/caddy/Caddyfile.plain")
+    seed_start = _SCRIPT.index("# --- Active config + state file")
+    plain = _SCRIPT[plain_start:seed_start]
+
+    # Explicit http:// scheme defeats Caddy auto-HTTPS; no on-demand TLS
+    # permission check and no HTTP->HTTPS redirect in plain mode.
+    assert "http://wildtunnel.${DOMAIN}" in plain
+    assert "http://*.${DOMAIN}" in plain
+    assert "reverse_proxy 127.0.0.1:${DASHBOARD_PORT}" in plain
+    assert "reverse_proxy 127.0.0.1:${FRP_VHOST_HTTP_PORT}" in plain
+    assert "on_demand" not in plain
+    assert "redir https" not in plain
+
+
+def test_seeds_active_caddyfile_and_state_file_from_no_tls() -> None:
+    # The active Caddyfile and the state file are both derived from NO_TLS.
+    assert 'if [[ -n "${NO_TLS}" ]]; then' in _SCRIPT
+    assert "TLS_MODE=plain" in _SCRIPT
+    assert "TLS_MODE=tls" in _SCRIPT
+    assert 'cp "/etc/caddy/Caddyfile.${TLS_MODE}" /etc/caddy/Caddyfile' in _SCRIPT
+    assert 'echo "${TLS_MODE}" > /etc/caddy/tls-mode' in _SCRIPT
+
+
+def test_installs_tls_toggle_executables() -> None:
+    assert "/usr/local/bin/wildtunnel-tls-enable" in _SCRIPT
+    assert "/usr/local/bin/wildtunnel-tls-disable" in _SCRIPT
+
+
+def test_tls_toggle_executables_are_made_executable() -> None:
+    assert "chmod +x /usr/local/bin/wildtunnel-tls-enable" in _SCRIPT
+    assert "chmod +x /usr/local/bin/wildtunnel-tls-disable" in _SCRIPT
+
+
+def test_tls_enable_swaps_to_tls_variant_and_reloads_caddy() -> None:
+    enable_start = _SCRIPT.index("cat > /usr/local/bin/wildtunnel-tls-enable")
+    enable_end = _SCRIPT.index("chmod +x /usr/local/bin/wildtunnel-tls-enable")
+    enable = _SCRIPT[enable_start:enable_end]
+
+    assert "cp /etc/caddy/Caddyfile.tls /etc/caddy/Caddyfile" in enable
+    assert 'echo tls > "${STATE_FILE}"' in enable
+    assert "systemctl reload caddy" in enable
+
+
+def test_tls_disable_swaps_to_plain_variant_and_reloads_caddy() -> None:
+    disable_start = _SCRIPT.index("cat > /usr/local/bin/wildtunnel-tls-disable")
+    disable_end = _SCRIPT.index("chmod +x /usr/local/bin/wildtunnel-tls-disable")
+    disable = _SCRIPT[disable_start:disable_end]
+
+    assert "cp /etc/caddy/Caddyfile.plain /etc/caddy/Caddyfile" in disable
+    assert 'echo plain > "${STATE_FILE}"' in disable
+    assert "systemctl reload caddy" in disable
+
+
+def test_tls_toggle_executables_are_idempotent() -> None:
+    # Re-running a toggle that is already in effect is a safe no-op.
+    assert 'echo "TLS is already enabled"' in _SCRIPT
+    assert 'echo "TLS is already disabled"' in _SCRIPT

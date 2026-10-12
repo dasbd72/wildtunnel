@@ -112,6 +112,10 @@ extra_port_range = (
     else None
 )
 
+# CDK context values arrive as strings; only `-c noTls=true` is ever passed
+# (see _run_cdk), so absence or any other value means TLS.
+no_tls = app.node.try_get_context("noTls") == "true"
+
 TunnelStack(
     app,
     STACK_NAME,
@@ -122,6 +126,7 @@ TunnelStack(
     frp_stats_user=FRP_STATS_USER,
     frp_stats_password=_get_or_create_frp_stats_password(),
     dashboard_admin_password=_get_or_create_dashboard_admin_password(),
+    no_tls=no_tls,
 )
 
 app.synth()

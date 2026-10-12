@@ -208,6 +208,7 @@ def test_user_data_wrapper_exports_full_env_var_contract() -> None:
         "FRP_BIND_PORT",
         "FRP_VHOST_HTTP_PORT",
         "ALLOW_PORTS",
+        "NO_TLS",
     ):
         assert f"export {var}=" in user_data, f"missing export of {var}"
 
@@ -228,6 +229,20 @@ def test_user_data_wrapper_embeds_dashboard_admin_password() -> None:
 
     user_data = _user_data(template)
     assert 'DASHBOARD_INITIAL_ADMIN_PASSWORD="s3cret-admin-pass"' in user_data
+
+
+def test_user_data_wrapper_exports_no_tls_flag_when_configured() -> None:
+    template = _build_template(no_tls=True)
+
+    user_data = _user_data(template)
+    assert 'export NO_TLS="1"' in user_data
+
+
+def test_user_data_wrapper_defaults_no_tls_flag_to_empty() -> None:
+    template = _build_template()
+
+    user_data = _user_data(template)
+    assert 'export NO_TLS=""' in user_data
 
 
 def test_user_data_wrapper_retries_ssm_token_fetch() -> None:

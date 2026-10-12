@@ -62,3 +62,31 @@ def test_round_trips_extra_port_range(tmp_path: Path) -> None:
     loaded = AwsEc2Config.load(path)
 
     assert loaded == config
+
+
+def test_no_tls_defaults_to_false() -> None:
+    config = AwsEc2Config(domain="example.com", region="ap-northeast-1")
+
+    assert config.no_tls is False
+
+
+def test_round_trips_no_tls(tmp_path: Path) -> None:
+    config = AwsEc2Config(domain="example.com", region="ap-northeast-1", no_tls=True)
+    path = tmp_path / "config.json"
+
+    config.save(path)
+    loaded = AwsEc2Config.load(path)
+
+    assert loaded == config
+
+
+def test_loads_file_missing_no_tls_key_as_false(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"provider": "aws-ec2", "domain": "example.com", '
+        '"extra_port_range": null, "aws_ec2": {"region": "ap-northeast-1"}}'
+    )
+
+    loaded = AwsEc2Config.load(path)
+
+    assert loaded.no_tls is False

@@ -157,6 +157,37 @@ class TestConfig:
             AwsLightsailConfig(domain="new.com", region="ap-northeast-1")
         )
 
+    def test_saves_no_tls_when_given(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            [
+                "config",
+                "--domain",
+                "example.com",
+                "--region",
+                "us-east-1",
+                "--no-tls",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        config = _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        assert config.no_tls is True
+
+    def test_no_tls_defaults_to_false(self, isolated_paths: Path) -> None:
+        runner = CliRunner()
+
+        result = runner.invoke(
+            aws_lightsail_cli.aws_lightsail,
+            ["config", "--domain", "example.com", "--region", "us-east-1"],
+        )
+
+        assert result.exit_code == 0, result.output
+        config = _saved_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE)
+        assert config.no_tls is False
+
 
 class TestDeploy:
     def test_requires_prior_config(self, isolated_paths: Path) -> None:
@@ -354,6 +385,26 @@ class TestDeploy:
 
         assert result.exit_code == 0, result.output
         assert seen_cidrs == [None]
+
+    def test_passes_no_tls_config_through_to_deploy_instance(
+        self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_config(aws_lightsail_cli.AWS_LIGHTSAIL_CONFIG_FILE, no_tls=True)
+        seen: list[bool] = []
+
+        def _fake_deploy(
+            config: AwsLightsailConfig, _token: str, **_kwargs: object
+        ) -> str:
+            seen.append(config.no_tls)
+            return "1.2.3.4"
+
+        monkeypatch.setattr(aws_lightsail_cli, "deploy_instance", _fake_deploy)
+        runner = CliRunner()
+
+        result = runner.invoke(aws_lightsail_cli.aws_lightsail, ["deploy"])
+
+        assert result.exit_code == 0, result.output
+        assert seen == [True]
 
     def test_wraps_timeout_waiting_for_running_clearly(
         self, isolated_paths: Path, monkeypatch: pytest.MonkeyPatch

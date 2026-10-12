@@ -31,6 +31,36 @@ def test_loads_file_missing_extra_port_range_key(tmp_path: Path) -> None:
     assert loaded == AwsLightsailConfig(domain="example.com", region="ap-northeast-1")
 
 
+def test_no_tls_defaults_to_false() -> None:
+    config = AwsLightsailConfig(domain="example.com", region="ap-northeast-1")
+
+    assert config.no_tls is False
+
+
+def test_round_trips_no_tls(tmp_path: Path) -> None:
+    config = AwsLightsailConfig(
+        domain="example.com", region="ap-northeast-1", no_tls=True
+    )
+    path = tmp_path / "config.json"
+
+    config.save(path)
+    loaded = AwsLightsailConfig.load(path)
+
+    assert loaded == config
+
+
+def test_loads_file_missing_no_tls_key_as_false(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"provider": "aws-lightsail", "domain": "example.com", '
+        '"extra_port_range": null, "aws_lightsail": {"region": "ap-northeast-1"}}'
+    )
+
+    loaded = AwsLightsailConfig.load(path)
+
+    assert loaded.no_tls is False
+
+
 def test_port_infos_without_extra_range_opens_only_http_https_and_frp() -> None:
     infos = port_infos(7000, None)
 
@@ -162,6 +192,37 @@ def test_render_user_data_sets_allow_ports_when_extra_range_given() -> None:
     )
 
     assert "allowPorts = [{ start = 24454, end = 25565 }]" in script
+
+
+def test_render_user_data_sets_no_tls_env_when_requested() -> None:
+    script = render_user_data(
+        domain="example.com",
+        frp_token="s3cret-token",
+        frp_bind_port=7000,
+        frp_vhost_http_port=7080,
+        frp_version="0.71.0",
+        caddy_version="2.9.1",
+        extra_port_range=None,
+        no_tls=True,
+    )
+
+    assert 'NO_TLS="1"' in script
+    assert not re.search(r"__[A-Z_]+__", script)
+
+
+def test_render_user_data_defaults_no_tls_env_to_empty() -> None:
+    script = render_user_data(
+        domain="example.com",
+        frp_token="s3cret-token",
+        frp_bind_port=7000,
+        frp_vhost_http_port=7080,
+        frp_version="0.71.0",
+        caddy_version="2.9.1",
+        extra_port_range=None,
+    )
+
+    assert 'NO_TLS=""' in script
+    assert not re.search(r"__[A-Z_]+__", script)
 
 
 def test_diff_ports_reports_desired_rule_missing_from_current() -> None:

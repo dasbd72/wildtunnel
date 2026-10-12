@@ -21,6 +21,7 @@ class AwsEc2Config:
     domain: str
     region: str
     extra_port_range: tuple[int, int] | None = None
+    no_tls: bool = False
 
     @classmethod
     def load(cls, path: Path) -> AwsEc2Config:
@@ -34,6 +35,7 @@ class AwsEc2Config:
                 if extra_port_range is not None
                 else None
             ),
+            no_tls=data.get("no_tls", False),
         )
 
     def save(self, path: Path) -> None:
@@ -44,6 +46,7 @@ class AwsEc2Config:
             "extra_port_range": (
                 list(self.extra_port_range) if self.extra_port_range else None
             ),
+            "no_tls": self.no_tls,
             "aws_ec2": {"region": self.region},
         }
         path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
