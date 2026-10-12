@@ -156,7 +156,7 @@ Connect to the instance to run these as root:
 - **AWS Lightsail**: SSH is closed to the public internet by default — use the Lightsail console's browser-based SSH, or pass `--ssh-cidr 1.2.3.4/32` to `deploy`/`diff` to additionally open a regular SSH client to your IP (see the SSH note under Step 2b above).
 
 - `sudo wildtunnel-reset-password`: generates a new admin password, forces a change on next login, and prints the new password. The only account-recovery path if you're locked out — there's no email-based forgot-password flow.
-- `sudo wildtunnel-upgrade`: upgrades the installed `wildtunnel[dashboard]` package to the latest PyPI release and restarts the dashboard service. The only way to pick up dashboard fixes on an already-deployed instance — `deploy` never re-provisions a live box, so it can't push code updates by itself.
+- `sudo wildtunnel-upgrade`: upgrades the installed `wildtunnel[dashboard]` package to the latest PyPI release, re-applies the server-side config (the admin executables and the Caddyfile variants), and restarts the dashboard + reloads Caddy. This is the only way to pick up fixes and new server-side features on an already-deployed instance — `deploy` never re-provisions a live box, so it can't push updates by itself. frps/Caddy binaries are provisioned once and are not upgraded by this command.
 - `sudo wildtunnel-tls-disable` / `sudo wildtunnel-tls-enable`: switch the box between plain HTTP and HTTPS by swapping the Caddyfile and reloading Caddy. This is the runtime counterpart to the deploy-time `--no-tls` flag — use it to change TLS mode on an already-deployed box (the `--no-tls` config flag only affects a fresh deploy).
 
 ## Upgrade from aws-reverse-tunnel
@@ -218,6 +218,7 @@ uv run python scripts/new_provider.py hetzner
 - The CDK app creates the frp token, so the plaintext token ends up in the generated CloudFormation template. AWS stores it as a SecureString, but a person with read access to the stack can still see it. Acceptable for this personal, single-account setup.
 - Lightsail instances cannot have an IAM role, so wildtunnel writes the frp token directly into the instance's user data instead of fetching it from SSM. A person who can call `lightsail:GetInstance` can see it there. Also, `wildtunnel aws-lightsail info` only works on the machine that ran `deploy`, since the token is never stored remotely.
 - The `aws-lightsail destroy` command releases the static IP address. The next `deploy` command gets a new static IP address. After a destroy and deploy, you must update your DNS records by hand.
+- Boxes provisioned before `wildtunnel-upgrade` started re-applying server-side config keep their old upgrade script (which only upgraded the dashboard package). To adopt the expanded upgrade behavior on such a box, redeploy it.
 
 ## License
 

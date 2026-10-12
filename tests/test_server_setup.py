@@ -24,6 +24,12 @@ _ENV_VAR_CONTRACT = (
 )
 
 
+def _upgrade_wrapper() -> str:
+    start = _SCRIPT.index("cat > /usr/local/bin/wildtunnel-upgrade")
+    end = _SCRIPT.index("chmod +x /usr/local/bin/wildtunnel-upgrade")
+    return _SCRIPT[start:end]
+
+
 def test_makes_no_aws_calls() -> None:
     assert "aws ssm" not in _SCRIPT
     assert "aws " not in _SCRIPT
@@ -143,11 +149,7 @@ def test_upgrade_wrapper_upgrades_the_dashboard_venv_package() -> None:
 
 
 def test_upgrade_wrapper_restarts_the_dashboard_service() -> None:
-    upgrade_start = _SCRIPT.index("cat > /usr/local/bin/wildtunnel-upgrade")
-    upgrade_end = _SCRIPT.index("chmod +x /usr/local/bin/wildtunnel-upgrade")
-    upgrade_wrapper = _SCRIPT[upgrade_start:upgrade_end]
-
-    assert "systemctl restart wildtunnel-dashboard" in upgrade_wrapper
+    assert "systemctl restart wildtunnel-dashboard" in _upgrade_wrapper()
 
 
 def test_upgrade_wrapper_is_made_executable() -> None:
@@ -243,3 +245,76 @@ def test_tls_toggle_executables_are_idempotent() -> None:
     # Re-running a toggle that is already in effect is a safe no-op.
     assert 'echo "TLS is already enabled"' in _SCRIPT
     assert 'echo "TLS is already disabled"' in _SCRIPT
+
+
+def test_supports_provision_and_configure_modes() -> None:
+    # The installer runs as full provisioning (default) or as an idempotent
+    # configure-only re-apply, which wildtunnel-upgrade invokes.
+    assert 'MODE="${1:-provision}"' in _SCRIPT
+    assert '[[ "${MODE}" == "provision" ]]' in _SCRIPT
+
+
+def test_persists_non_secret_inputs_to_state_file_at_provision() -> None:
+    # Provision records only the non-secret inputs the configure phase needs
+    # to regenerate the Caddyfile variants, so a later configure (upgrade)
+    # needs no deploy-time environment.
+    assert "STATE_FILE=/etc/wildtunnel/config.env" in _SCRIPT
+    assert "DOMAIN=${DOMAIN}" in _SCRIPT
+    assert "DASHBOARD_PORT=${DASHBOARD_PORT}" in _SCRIPT
+    assert "FRP_VHOST_HTTP_PORT=${FRP_VHOST_HTTP_PORT}" in _SCRIPT
+
+
+def test_configure_reads_inputs_from_state_file() -> None:
+    # configure mode sources the persisted state file instead of requiring
+    # the deploy-time env vars.
+    assert '. "${STATE_FILE}"' in _SCRIPT
+
+
+def test_upgrade_reruns_configure_from_the_installed_package() -> None:
+    upgrade = _upgrade_wrapper()
+
+    assert (
+        '/opt/wildtunnel-dashboard/bin/pip install --upgrade "wildtunnel[dashboard]"'
+        in upgrade
+    )
+    # Locates the freshly-installed installer and re-runs its configure phase.
+    assert "server-setup.sh" in upgrade
+    assert 'bash "${CONFIGURE_SCRIPT}" configure' in upgrade
+    assert "systemctl restart wildtunnel-dashboard" in upgrade
+
+
+def test_upgrade_reports_before_and_after_versions() -> None:
+    upgrade = _upgrade_wrapper()
+
+    assert "BEFORE" in upgrade
+    assert "AFTER" in upgrade
+    assert "->" in upgrade
+
+
+def test_admin_executables_are_replaced_atomically() -> None:
+    # Admin executables are written to a temp file then renamed, so the
+    # upgrade script (which re-runs configure, rewriting itself mid-run) is
+    # never truncated while a shell is still reading it.
+    assert "cat > /usr/local/bin/wildtunnel-upgrade.tmp" in _SCRIPT
+    assert (
+        "mv /usr/local/bin/wildtunnel-upgrade.tmp /usr/local/bin/wildtunnel-upgrade"
+        in _SCRIPT
+    )
+
+
+def test_configure_preserves_tls_mode_on_rerun() -> None:
+    # On a re-run (upgrade) the configure phase reads the existing tls-mode
+    # instead of re-deriving it, so it never silently flips a live box.
+    assert 'TLS_MODE="$(cat /etc/caddy/tls-mode 2>/dev/null || echo tls)"' in _SCRIPT
+
+
+def test_configure_never_rewrites_secret_bearing_files() -> None:
+    # The re-runnable configure phase writes only admin executables and
+    # Caddyfile variants; the secret-bearing frps config and dashboard unit
+    # are written by the provision phase alone.
+    configure = _SCRIPT[_SCRIPT.index("# === configure phase") :]
+    assert "auth.token" not in configure
+    assert "FRP_STATS_PASSWORD" not in configure
+    assert "DASHBOARD_INITIAL_ADMIN_PASSWORD" not in configure
+    assert "frps.toml" not in configure
+    assert "wildtunnel-dashboard.service" not in configure
