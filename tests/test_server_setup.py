@@ -217,6 +217,11 @@ def test_tls_enable_swaps_to_tls_variant_and_reloads_caddy() -> None:
     assert "cp /etc/caddy/Caddyfile.tls /etc/caddy/Caddyfile" in enable
     assert 'echo tls > "${STATE_FILE}"' in enable
     assert "systemctl reload caddy" in enable
+    # The state file is written only after the reload succeeds, so a failed
+    # reload can't leave the state claiming a mode Caddy never applied.
+    assert enable.index("systemctl reload caddy") < enable.index(
+        'echo tls > "${STATE_FILE}"'
+    )
 
 
 def test_tls_disable_swaps_to_plain_variant_and_reloads_caddy() -> None:
@@ -227,6 +232,11 @@ def test_tls_disable_swaps_to_plain_variant_and_reloads_caddy() -> None:
     assert "cp /etc/caddy/Caddyfile.plain /etc/caddy/Caddyfile" in disable
     assert 'echo plain > "${STATE_FILE}"' in disable
     assert "systemctl reload caddy" in disable
+    # The state file is written only after the reload succeeds, so a failed
+    # reload can't leave the state claiming a mode Caddy never applied.
+    assert disable.index("systemctl reload caddy") < disable.index(
+        'echo plain > "${STATE_FILE}"'
+    )
 
 
 def test_tls_toggle_executables_are_idempotent() -> None:

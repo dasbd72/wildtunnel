@@ -275,8 +275,10 @@ if [[ "$(cat "${STATE_FILE}" 2>/dev/null || echo plain)" == "tls" ]]; then
   exit 0
 fi
 cp /etc/caddy/Caddyfile.tls /etc/caddy/Caddyfile
-echo tls > "${STATE_FILE}"
+# Write the state only after a successful reload; a failed reload must not
+# leave the state claiming a mode Caddy never actually applied.
 systemctl reload caddy
+echo tls > "${STATE_FILE}"
 echo "TLS enabled"
 EOF
 chmod +x /usr/local/bin/wildtunnel-tls-enable
@@ -290,8 +292,10 @@ if [[ "$(cat "${STATE_FILE}" 2>/dev/null || echo tls)" == "plain" ]]; then
   exit 0
 fi
 cp /etc/caddy/Caddyfile.plain /etc/caddy/Caddyfile
-echo plain > "${STATE_FILE}"
+# Write the state only after a successful reload; a failed reload must not
+# leave the state claiming a mode Caddy never actually applied.
 systemctl reload caddy
+echo plain > "${STATE_FILE}"
 echo "TLS disabled"
 EOF
 chmod +x /usr/local/bin/wildtunnel-tls-disable
