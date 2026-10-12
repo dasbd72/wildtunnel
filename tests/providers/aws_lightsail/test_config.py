@@ -225,6 +225,27 @@ def test_render_user_data_defaults_no_tls_env_to_empty() -> None:
     assert not re.search(r"__[A-Z_]+__", script)
 
 
+def test_render_user_data_stays_under_lightsail_user_data_limit() -> None:
+    # Lightsail rejects user data over 16 KiB (16384 bytes). Render with
+    # worst-case inputs - a long domain, an extra port range, and
+    # realistic-length secrets (token_urlsafe(32) -> 43 chars, (24) -> 32) -
+    # and assert a margin so the installer can grow a little before failing.
+    script = render_user_data(
+        domain="a-very-long.example-domain-for-testing.com",
+        frp_token="x" * 43,
+        frp_bind_port=7000,
+        frp_vhost_http_port=7080,
+        frp_version="0.71.0",
+        caddy_version="2.9.1",
+        extra_port_range=(20000, 20100),
+        frp_stats_user="dashboard",
+        frp_stats_password="y" * 43,
+        dashboard_admin_password="z" * 32,
+    )
+
+    assert len(script.encode()) < 14_000
+
+
 def test_diff_ports_reports_desired_rule_missing_from_current() -> None:
     desired = [
         {"fromPort": 443, "toPort": 443, "protocol": "tcp", "cidrs": ["0.0.0.0/0"]}
