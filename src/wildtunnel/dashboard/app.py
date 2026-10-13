@@ -11,6 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from wildtunnel.dashboard import db, egress
 from wildtunnel.dashboard.db import Admin
+from wildtunnel.dashboard.formatting import format_bytes
 from wildtunnel.dashboard.stats import (
     DEFAULT_STATS_BASE_URL,
     FrpsStatsSource,
@@ -263,12 +264,13 @@ def create_app(
     ) -> HTMLResponse:
         rows = "".join(
             f"<tr><td>{proxy.name}</td><td>{proxy.connections}</td>"
-            f"<td>{proxy.bytes_in}</td><td>{proxy.bytes_out}</td></tr>"
+            f"<td>{format_bytes(proxy.bytes_in)}</td>"
+            f"<td>{format_bytes(proxy.bytes_out)}</td></tr>"
             for proxy in request.app.state.stats_source.current_stats()
         )
         table = (
             "<table><thead><tr><th>tunnel</th><th>connections</th>"
-            f"<th>bytes in</th><th>bytes out</th></tr></thead><tbody>{rows}</tbody></table>"
+            f"<th>traffic in</th><th>traffic out</th></tr></thead><tbody>{rows}</tbody></table>"
         )
         return _dashboard_page("Live stats", table)
 
@@ -278,8 +280,9 @@ def create_app(
         admin: Admin = Depends(current_admin_with_password_set),  # noqa: B008
     ) -> HTMLResponse:
         rows = "".join(
-            f"<tr><td>{total.tunnel_name}</td><td>{total.day_bytes}</td>"
-            f"<td>{total.week_bytes}</td><td>{total.month_bytes}</td></tr>"
+            f"<tr><td>{total.tunnel_name}</td><td>{format_bytes(total.day_bytes)}</td>"
+            f"<td>{format_bytes(total.week_bytes)}</td>"
+            f"<td>{format_bytes(total.month_bytes)}</td></tr>"
             for total in egress.totals_by_tunnel(request.app.state.conn)
         )
         table = (

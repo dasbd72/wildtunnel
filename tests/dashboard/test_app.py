@@ -157,8 +157,8 @@ def test_stats_shows_per_tunnel_connections_and_bandwidth_when_authenticated() -
     assert response.status_code == 200
     assert "home-ssh" in response.text
     assert "3" in response.text
-    assert "1024" in response.text
-    assert "2048" in response.text
+    assert "1.0 KiB" in response.text
+    assert "2.0 KiB" in response.text
 
 
 def test_egress_redirects_unauthenticated_request_to_login() -> None:
@@ -195,10 +195,10 @@ def test_egress_shows_day_week_month_totals_per_tunnel_when_authenticated() -> N
 
     assert response.status_code == 200
     assert "home-ssh" in response.text
-    assert "100" in response.text
-    assert "150" in response.text
-    assert "160" in response.text
-    assert "999" not in response.text
+    assert "100 B" in response.text
+    assert "150 B" in response.text
+    assert "160 B" in response.text
+    assert "999 B" not in response.text
 
 
 def test_egress_sampler_task_is_scheduled_when_interval_configured() -> None:
